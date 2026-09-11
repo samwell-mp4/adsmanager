@@ -2,9 +2,10 @@ FROM nginx:alpine
 
 WORKDIR /usr/share/nginx/html
 
-# Support both root context and apps/web context
-COPY dist* ./
-COPY nginx*.conf /etc/nginx/conf.d/default.conf
+RUN rm -rf /usr/share/nginx/html/*
+
+COPY dist/ /usr/share/nginx/html/
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
