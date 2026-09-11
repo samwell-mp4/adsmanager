@@ -7,6 +7,13 @@ import { healthRoutes } from './routes/health.routes.js';
 import { proxyRoutes } from './routes/proxy.routes.js';
 import { profileRoutes } from './routes/profile.routes.js';
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fastifyStatic from '@fastify/static';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const fastify = Fastify({
   logger: {
     transport: {
@@ -32,8 +39,28 @@ fastify.setErrorHandler((error, _request, reply) => {
   });
 });
 
+// Handle SPA routing (React Router fallback)
+fastify.setNotFoundHandler((request, reply) => {
+  if (request.raw.url && request.raw.url.startsWith('/api')) {
+    return reply.status(404).send({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: `Route ${request.method}:${request.url} not found`,
+      },
+    });
+  }
+  return (reply as any).sendFile('index.html');
+});
+
 async function start() {
   try {
+    // Serve static files from React frontend
+    await fastify.register(fastifyStatic, {
+      root: path.join(__dirname, '../../web/dist'),
+      prefix: '/',
+    });
+
     // Enable CORS for web frontend
     await fastify.register(cors, {
       origin: true,
