@@ -77,22 +77,43 @@ export class BrowserManager {
         ports,
       });
 
-      // Auto-inject saved cookies if cookies.json exists in profile directory
-      setTimeout(async () => {
+      // Auto-inject saved cookies if cookies.json exists in profile directory (with active CDP polling)
+      (async () => {
         try {
           const cookieFile = path.join(profile.chrome_data_path, 'cookies.json');
-          if (fs.existsSync(cookieFile)) {
-            const raw = fs.readFileSync(cookieFile, 'utf-8');
-            const savedCookies = JSON.parse(raw);
-            if (Array.isArray(savedCookies) && savedCookies.length > 0) {
-              await automationService.setCookies(ports.cdpPort, savedCookies, profile.chrome_data_path);
-              console.log(`[BrowserManager] Auto-restored ${savedCookies.length} cookies on profile #${profileId} startup.`);
-            }
+          if (!fs.existsSync(cookieFile)) return;
+
+          const raw = fs.readFileSync(cookieFile, 'utf-8');
+          const savedCookies = JSON.parse(raw);
+          if (!Array.isArray(savedCookies) || savedCookies.length === 0) return;
+
+          console.log(`[BrowserManager] Profile #${profileId} has ${savedCookies.length} saved cookies. Waiting for Chrome CDP on port ${ports.cdpPort}...`);
+
+          let cdpReady = false;
+          for (let attempt = 1; attempt <= 30; attempt++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            try {
+              const endpoint = await dockerManager.getCdpTargetForPort(ports.cdpPort);
+              const res = await fetch(`${endpoint}/json/version`).catch(() => null);
+              if (res && res.ok) {
+                cdpReady = true;
+                console.log(`[BrowserManager] Chrome CDP ready on attempt ${attempt}.`);
+                break;
+              }
+            } catch {}
+          }
+
+          if (cdpReady) {
+            await new Promise((r) => setTimeout(r, 1000));
+            await automationService.setCookies(ports.cdpPort, savedCookies, profile.chrome_data_path);
+            console.log(`[BrowserManager] Successfully auto-restored ${savedCookies.length} cookies on profile #${profileId} startup!`);
+          } else {
+            console.warn(`[BrowserManager] Chrome CDP port ${ports.cdpPort} did not become ready in 30s for profile #${profileId}.`);
           }
         } catch (cookieErr: any) {
           console.warn(`[BrowserManager] Notice auto-injecting cookies: ${cookieErr.message}`);
         }
-      }, 2500);
+      })();
 
       const updated = await profileRepository.findById(profileId);
       return updated!;

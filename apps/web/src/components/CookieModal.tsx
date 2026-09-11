@@ -51,18 +51,22 @@ export const CookieModal: React.FC<CookieModalProps> = ({ isOpen, onClose, profi
     setSaving(true);
     setFeedback(null);
     try {
-      let parsed = [];
-      try {
-        parsed = JSON.parse(jsonInput);
-        if (!Array.isArray(parsed)) {
-          throw new Error('O JSON precisa ser um Array de cookies [ { name, value, domain... } ]');
-        }
-      } catch (err: any) {
-        throw new Error(`JSON inválido: ${err.message}`);
+      if (!jsonInput.trim()) {
+        throw new Error('Por favor, cole os cookies antes de salvar.');
       }
 
-      const res = await api.setCookies(profileId, parsed);
-      setFeedback({ type: 'success', message: `${res.count} cookies aplicados com sucesso!` });
+      let payload: any = jsonInput.trim();
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        // Keep as string: backend normalizer handles string headers and Netscape formats!
+      }
+
+      const res = await api.setCookies(profileId, payload);
+      setFeedback({
+        type: 'success',
+        message: `${res.count} cookies aplicados com sucesso! Se o Facebook estiver aberto no navegador, a página será atualizada com a sessão ativa.`,
+      });
       await fetchCookies();
       setMode('view');
     } catch (e: any) {
@@ -236,21 +240,46 @@ export const CookieModal: React.FC<CookieModalProps> = ({ isOpen, onClose, profi
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-300">
-                  Cole abaixo o JSON de cookies (EditThisCookie / Cookie-Editor):
+                  Cole os cookies (JSON, formato chave=valor ou Netscape):
                 </label>
-                <span className="text-[11px] text-slate-500 font-mono">[ &#123; name, value, domain... &#125; ]</span>
+                <span className="text-[11px] text-slate-500 font-mono">Cookie-Editor / J2Team / c_user=...</span>
               </div>
+
+              {jsonInput.includes('c_user') && jsonInput.includes('xs') && (
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>Sessão do Facebook identificada com sucesso (tokens <b>c_user</b> e <b>xs</b> presentes)!</span>
+                </div>
+              )}
+
+              {jsonInput.includes('c_user') && !jsonInput.includes('xs') && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>Atenção: Cookie <b>c_user</b> encontrado, mas <b>xs</b> está ausente. O Facebook precisa de ambos para login direto.</span>
+                </div>
+              )}
+
               <textarea
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
-                placeholder='[
+                placeholder='Cole aqui seu JSON exportado do Cookie-Editor ou EditThisCookie:
+[
   {
     "domain": ".facebook.com",
     "name": "c_user",
     "value": "100012345678",
     "path": "/"
+  },
+  {
+    "domain": ".facebook.com",
+    "name": "xs",
+    "value": "2%3Aabc...",
+    "path": "/"
   }
-]'
+]
+
+Ou formato direto de texto:
+c_user=100012345678; xs=2%3Aabc...; datr=xyz;'
                 rows={12}
                 className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 transition resize-none"
               />

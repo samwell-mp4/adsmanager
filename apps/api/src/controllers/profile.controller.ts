@@ -271,19 +271,8 @@ export async function setProfileCookiesHandler(
     return reply.status(404).send({ success: false, error: 'Perfil não encontrado' });
   }
 
-  let cookieList: any[] = [];
-  if (typeof req.body?.cookies === 'string') {
-    try {
-      cookieList = JSON.parse(req.body.cookies);
-    } catch {
-      return reply.status(400).send({ success: false, error: 'Formato de cookies inválido. Envie um JSON array válido.' });
-    }
-  } else if (Array.isArray(req.body?.cookies)) {
-    cookieList = req.body.cookies;
-  }
-
   const { automationService } = await import('../services/automation.service.js');
-  const result = await automationService.setCookies(profile.cdp_port || undefined, cookieList, profile.chrome_data_path);
+  const result = await automationService.setCookies(profile.cdp_port || undefined, req.body?.cookies, profile.chrome_data_path);
   return reply.send({ success: true, count: result.count, message: `${result.count} cookies aplicados com sucesso.` });
 }
 

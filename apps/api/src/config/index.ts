@@ -11,7 +11,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || 'postgres://adsmanager:Samuca03146555%40@adsmanager_adsmanager:5432/adsmanager?sslmode=disable',
   profilesDataDir: process.env.PROFILES_DATA_DIR || '/data/browser-profiles',
   extensionsDataDir: process.env.EXTENSIONS_DATA_DIR || path.join(process.env.PROFILES_DATA_DIR || '/data/browser-profiles', 'global_extensions'),
-  browserImage: process.env.BROWSER_IMAGE || 'browser-profile:v1.3',
+  browserImage: process.env.BROWSER_IMAGE || 'browser-profile:v1.4',
   dockerSocket: process.env.DOCKER_SOCKET || (process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock'),
   ports: {
     novnc: {

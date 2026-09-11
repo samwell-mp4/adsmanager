@@ -163,7 +163,13 @@ export class DockerManager {
         
         const __filename = fileURLToPath(import.meta.url);
         const __dirname = path.dirname(__filename);
-        const dockerDir = path.join(__dirname, '../../../../docker/browser');
+        let dockerDir = path.resolve(__dirname, '../../../../docker/browser');
+        if (!fs.existsSync(dockerDir)) {
+          dockerDir = path.resolve(process.cwd(), 'docker/browser');
+        }
+        if (!fs.existsSync(dockerDir)) {
+          dockerDir = path.resolve(process.cwd(), '../../docker/browser');
+        }
         
         const stream = await this.docker.buildImage(tarFs.default.pack(dockerDir), {
           t: config.browserImage
@@ -277,16 +283,71 @@ chrome.webRequest.onAuthRequired.addListener(
         };
         fs.writeFileSync(path.join(stealthExtDir, 'manifest.json'), JSON.stringify(stealthManifest, null, 2));
         const stealthJs = `
-try {
-  Object.defineProperty(navigator, 'webdriver', {
-    get: () => undefined,
-  });
-  delete navigator.__proto__.webdriver;
-} catch (e) {}
+(function() {
+  function injectStealth() {
+    try {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+        configurable: true
+      });
+      if (window.navigator && window.navigator.__proto__) {
+        delete window.navigator.__proto__.webdriver;
+      }
+    } catch (e) {}
 
-if (!window.chrome) {
-  window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {} };
-}
+    try {
+      if (!window.chrome) {
+        window.chrome = {};
+      }
+      if (!window.chrome.runtime) {
+        window.chrome.runtime = {
+          PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
+          PlatformArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' },
+          PlatformNaclArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' }
+        };
+      }
+    } catch (e) {}
+
+    try {
+      const fakePlugins = [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+      ];
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => fakePlugins,
+        configurable: true
+      });
+    } catch (e) {}
+
+    try {
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['pt-BR', 'pt', 'en-US', 'en'],
+        configurable: true
+      });
+    } catch (e) {}
+
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const origQuery = navigator.permissions.query;
+        navigator.permissions.query = (parameters) => (
+          parameters && parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            origQuery(parameters)
+        );
+      }
+    } catch (e) {}
+  }
+
+  injectStealth();
+
+  try {
+    const s = document.createElement('script');
+    s.textContent = '(' + injectStealth.toString() + ')();';
+    (document.head || document.documentElement).appendChild(s);
+    s.remove();
+  } catch (e) {}
+})();
 `;
         fs.writeFileSync(path.join(stealthExtDir, 'stealth.js'), stealthJs);
         fs.chmodSync(stealthExtDir, 0o777);

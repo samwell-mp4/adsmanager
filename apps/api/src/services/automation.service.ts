@@ -122,9 +122,122 @@ export class AutomationService {
   }
 
   /**
+   * Normalizes cookies from any format (JSON array, J2Team object, Cookie string header, Netscape file)
+   */
+  normalizeCookies(input: any): any[] {
+    let list: any[] = [];
+    if (Array.isArray(input)) {
+      list = input;
+    } else if (input && typeof input === 'object') {
+      if (Array.isArray(input.cookies)) {
+        list = input.cookies;
+      } else if (Array.isArray(input.data)) {
+        list = input.data;
+      }
+    } else if (typeof input === 'string') {
+      const trimmed = input.trim();
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return this.normalizeCookies(parsed);
+        } catch {}
+      }
+
+      // Check if Netscape format (starts with # or has tabs)
+      if (trimmed.includes('\t')) {
+        const lines = trimmed.split('\n');
+        for (const line of lines) {
+          const l = line.trim();
+          if (!l || l.startsWith('#')) continue;
+          const parts = l.split('\t');
+          if (parts.length >= 7) {
+            list.push({
+              domain: parts[0],
+              path: parts[2],
+              secure: parts[3].toLowerCase() === 'true',
+              expirationDate: parseInt(parts[4], 10),
+              name: parts[5],
+              value: parts[6],
+            });
+          }
+        }
+      } else if (trimmed.includes('=')) {
+        // Cookie header string: c_user=1000...; xs=abc...; datr=xyz
+        const pairs = trimmed.split(';');
+        for (const pair of pairs) {
+          const eqIdx = pair.indexOf('=');
+          if (eqIdx > 0) {
+            const k = pair.substring(0, eqIdx).trim();
+            const v = pair.substring(eqIdx + 1).trim();
+            if (k) {
+              list.push({
+                name: k,
+                value: v,
+                domain: '.facebook.com',
+                path: '/',
+                secure: true,
+                sameSite: 'None',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Sanitize and format each cookie for CDP and Playwright
+    return list
+      .map((c: any) => {
+        let domain = String(c.domain || '').trim();
+        if (!domain) {
+          domain = '.facebook.com';
+        }
+        if (!domain.startsWith('.') && !c.hostOnly) {
+          domain = '.' + domain;
+        }
+
+        let path = String(c.path || '/').trim();
+        if (!path.startsWith('/')) path = '/' + path;
+
+        const rawSameSite = String(c.sameSite || '').toLowerCase();
+        let sSite: 'Strict' | 'Lax' | 'None' = 'Lax';
+        if (rawSameSite === 'no_restriction' || rawSameSite === 'none') {
+          sSite = 'None';
+        } else if (rawSameSite === 'strict') {
+          sSite = 'Strict';
+        }
+
+        let expires = c.expirationDate || c.expires;
+        if (typeof expires === 'number' && expires > 1e11) {
+          expires = Math.floor(expires / 1000);
+        }
+        if (typeof expires !== 'number' || isNaN(expires) || expires <= 0) {
+          expires = Math.floor(Date.now() / 1000) + 31536000;
+        }
+
+        const cleanDomain = domain.replace(/^\./, '');
+        const cookieUrl = `https://${cleanDomain}${path}`;
+
+        return {
+          name: String(c.name || '').trim(),
+          value: String(c.value || ''),
+          url: cookieUrl,
+          domain: domain,
+          path: path,
+          expires: typeof expires === 'number' ? Math.floor(expires) : undefined,
+          httpOnly: Boolean(c.httpOnly),
+          secure: sSite === 'None' ? true : Boolean(c.secure),
+          sameSite: sSite,
+        };
+      })
+      .filter((c) => c.name);
+  }
+
+  /**
    * Injects cookies into active browser and saves to disk backup
    */
-  async setCookies(cdpPort?: number, cookies: any[] = [], profileDataDir?: string): Promise<{ success: boolean; count: number }> {
+  async setCookies(cdpPort?: number, rawCookies: any = [], profileDataDir?: string): Promise<{ success: boolean; count: number }> {
+    const cookies = this.normalizeCookies(rawCookies);
+
     // 1. Save to disk if dir provided
     if (profileDataDir) {
       const fs = await import('fs');
@@ -136,55 +249,43 @@ export class AutomationService {
     }
 
     // 2. Inject via CDP if running
-    if (cdpPort) {
+    if (cdpPort && cookies.length > 0) {
       try {
         const chromium = await this.getChromium();
         const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
         const browser = await chromium.connectOverCDP(endpoint);
         try {
           const context = browser.contexts()[0];
-          if (context && cookies.length > 0) {
-            const page = context.pages()[0] || (await context.newPage());
-            const cdpSession = await context.newCDPSession(page);
-
-            const cdpCookies = cookies.map((c: any) => {
-              let sSite: 'Strict' | 'Lax' | 'None' = 'Lax';
-              const rawSameSite = String(c.sameSite || '').toLowerCase();
-              if (rawSameSite === 'no_restriction' || rawSameSite === 'none') {
-                sSite = 'None';
-              } else if (rawSameSite === 'strict') {
-                sSite = 'Strict';
-              }
-
-              let domain = String(c.domain || '').trim();
-              if (domain && !domain.startsWith('.') && !c.hostOnly) {
-                domain = '.' + domain;
-              }
-
-              let expires = c.expirationDate || c.expires;
-              if (typeof expires === 'number' && expires > 1e11) {
-                expires = Math.floor(expires / 1000);
-              }
-
-              return {
-                name: String(c.name || '').trim(),
-                value: String(c.value || ''),
-                domain: domain || undefined,
-                path: c.path || '/',
-                expires: typeof expires === 'number' ? Math.floor(expires) : undefined,
-                httpOnly: Boolean(c.httpOnly),
-                secure: sSite === 'None' ? true : Boolean(c.secure),
-                sameSite: sSite,
-              };
-            }).filter((c: any) => c.name && c.domain);
-
+          if (context) {
+            // First: Playwright native context.addCookies
             try {
-              await cdpSession.send('Network.setCookies', { cookies: cdpCookies });
-              console.log(`[AutomationService] Injected ${cdpCookies.length} cookies via CDP Network.setCookies`);
-            } catch (cdpErr: any) {
-              console.warn(`[AutomationService] Network.setCookies failed, trying context.addCookies: ${cdpErr.message}`);
-              await context.addCookies(cdpCookies as any);
+              await context.addCookies(cookies as any);
+              console.log(`[AutomationService] Injected ${cookies.length} cookies via context.addCookies`);
+            } catch (playwrightErr: any) {
+              console.warn(`[AutomationService] context.addCookies warning: ${playwrightErr.message}`);
             }
+
+            // Second: CDP Network.setCookies for native browser session
+            const page = context.pages()[0] || (await context.newPage());
+            try {
+              const cdpSession = await context.newCDPSession(page);
+              await cdpSession.send('Network.setCookies', { cookies });
+              console.log(`[AutomationService] Injected ${cookies.length} cookies via CDP Network.setCookies`);
+            } catch (cdpErr: any) {
+              console.warn(`[AutomationService] Network.setCookies warning: ${cdpErr.message}`);
+            }
+
+            // Third: If page is on facebook or about:blank, navigate or reload so user sees logged in state
+            try {
+              const currentUrl = page.url();
+              if (currentUrl.includes('facebook.com')) {
+                console.log(`[AutomationService] Reloading active Facebook page: ${currentUrl}`);
+                await page.reload({ timeout: 5000 }).catch(() => {});
+              } else if (currentUrl === 'about:blank') {
+                console.log(`[AutomationService] Navigating active page to https://www.facebook.com`);
+                await page.goto('https://www.facebook.com', { timeout: 8000 }).catch(() => {});
+              }
+            } catch {}
           }
         } finally {
           await browser.close();

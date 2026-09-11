@@ -101,7 +101,7 @@ google-chrome-stable \
     --test-type \
     --disable-dev-shm-usage \
     --disable-gpu \
-    --disable-software-rasterizer \
+    --enable-webgl \
     --disable-blink-features=AutomationControlled \
     --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
     --password-store=basic \
