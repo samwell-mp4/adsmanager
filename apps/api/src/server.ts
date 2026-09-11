@@ -158,6 +158,24 @@ async function start() {
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
 
+    // Dual-port listener: also listen on port 3000 (if primary is 3001) or 3001 (if primary is 3000)
+    // so Easypanel/Traefik will NEVER get 502 regardless of whether 3000 or 3001 is mapped!
+    const altPort = config.port === 3000 ? 3001 : 3000;
+    try {
+      const httpModule = await import('http');
+      const altServer = httpModule.default.createServer((req, res) => {
+        fastify.server.emit('request', req, res);
+      });
+      altServer.on('upgrade', (req, socket, head) => {
+        fastify.server.emit('upgrade', req, socket, head);
+      });
+      altServer.listen(altPort, config.host, () => {
+        console.log(`[API] Alternate listener active on http://${config.host}:${altPort}`);
+      });
+    } catch (e: any) {
+      console.log(`[API] Alternate listener on port ${altPort} skipped:`, e.message);
+    }
+
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
     fastify.server.on('upgrade', async (req, socket, head) => {
       try {
