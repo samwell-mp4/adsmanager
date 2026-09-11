@@ -5,6 +5,7 @@ import {
   getProfileCdpHandler,
   getProfileEventsHandler,
   getProfileHandler,
+  getProfileLogsHandler,
   getProfilePagesHandler,
   getProfileStatusHandler,
   getProfileVncHandler,
@@ -36,6 +37,7 @@ export async function profileRoutes(fastify: FastifyInstance) {
   fastify.get('/api/profiles/:id/vnc', getProfileVncHandler);
   fastify.get('/api/profiles/:id/cdp', getProfileCdpHandler);
   fastify.get('/api/profiles/:id/events', getProfileEventsHandler);
+  fastify.get('/api/profiles/:id/logs', getProfileLogsHandler);
   fastify.get('/api/profiles/:id/pages', getProfilePagesHandler);
   fastify.post('/api/profiles/:id/navigate', navigateProfileHandler);
 }

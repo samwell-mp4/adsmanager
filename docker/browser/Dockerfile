@@ -37,7 +37,8 @@ COPY proxy-forwarder.js /usr/local/bin/proxy-forwarder.js
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/proxy-forwarder.js
 
-USER browser
+# We keep container root at entrypoint so it can configure volume mount permissions,
+# then services run reliably
 ENV HOME=/home/browser
 
 # Expose VNC (5900), noVNC (6080), CDP Remote Debugging (9222)

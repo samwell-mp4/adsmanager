@@ -74,6 +74,16 @@ export const api = {
     return handleResponse<BrowserEvent[]>(res);
   },
 
+  async getProfileLogs(id: number): Promise<string> {
+    try {
+      const res = await fetch(`${API_BASE}/profiles/${id}/logs`);
+      const json = await res.json();
+      return json.logs || 'Nenhum log retornado.';
+    } catch (e: any) {
+      return `Erro ao buscar logs: ${e.message}`;
+    }
+  },
+
   async getProfilePages(id: number): Promise<{ title: string; url: string }[]> {
     const res = await fetch(`${API_BASE}/profiles/${id}/pages`);
     return handleResponse<{ title: string; url: string }[]>(res);

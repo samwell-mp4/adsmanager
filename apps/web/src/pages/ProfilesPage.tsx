@@ -94,7 +94,7 @@ export const ProfilesPage: React.FC = () => {
 
   const handleOpenVnc = (novncPort: number | null) => {
     if (!novncPort) return;
-    const url = `http://${window.location.hostname}:${novncPort}/vnc.html?autoconnect=true&resize=scale`;
+    const url = `${window.location.protocol}//${window.location.host}/vnc/${novncPort}/vnc.html?autoconnect=true&resize=scale&path=vnc/${novncPort}/websockify`;
     window.open(url, '_blank');
   };
 

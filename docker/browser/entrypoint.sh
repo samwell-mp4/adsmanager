@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 echo "[browser-container] Starting profile runtime..."
 
@@ -10,9 +9,11 @@ export SCREEN_DEPTH=${SCREEN_DEPTH:-24}
 export LOCALE=${LOCALE:-pt-BR}
 export TZ=${TIMEZONE:-America/Sao_Paulo}
 
-# Ensure profile directory has proper permissions
+# Ensure profile directory has proper permissions regardless of host volume UID
 mkdir -p /home/browser/profile
 mkdir -p /tmp/runtime
+chown -R browser:browser /home/browser /tmp/runtime 2>/dev/null || true
+chmod -R 777 /home/browser/profile /tmp/runtime 2>/dev/null || true
 
 # 1. Start Xvfb
 echo "[browser-container] Starting Xvfb on :99 (${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH})..."
@@ -60,7 +61,7 @@ cleanup() {
         kill -TERM "$CHROME_PID" 2>/dev/null || true
         wait "$CHROME_PID" 2>/dev/null || true
     fi
-    echo "[browser-container] Chromium terminated cleanly. Stopping auxiliary services..."
+    echo "[browser-container] Stopping auxiliary services..."
     [ -n "$PROXY_PID" ] && kill -TERM "$PROXY_PID" 2>/dev/null || true
     [ -n "$NOVNC_PID" ] && kill -TERM "$NOVNC_PID" 2>/dev/null || true
     [ -n "$X11VNC_PID" ] && kill -TERM "$X11VNC_PID" 2>/dev/null || true
@@ -78,6 +79,14 @@ google-chrome-stable \
     --no-sandbox \
     --disable-dev-shm-usage \
     --disable-gpu \
+    --disable-software-rasterizer \
+    --password-store=basic \
+    --use-mock-keychain \
+    --disable-background-networking \
+    --disable-default-apps \
+    --disable-extensions \
+    --disable-sync \
+    --disable-translate \
     --window-size=${SCREEN_WIDTH},${SCREEN_HEIGHT} \
     --start-maximized \
     --user-data-dir=/home/browser/profile \
@@ -91,6 +100,19 @@ google-chrome-stable \
 
 CHROME_PID=$!
 
-# Wait for Chrome to exit or signal received
+# Wait for Chrome to exit or monitor
 wait $CHROME_PID
+CHROME_EXIT=$?
+echo "[browser-container] Chrome exited with code: $CHROME_EXIT"
+
+# Print logs for diagnostics if Chrome crashed
+if [ "$CHROME_EXIT" -ne 0 ]; then
+    echo "=== /tmp/runtime/xvfb.log ==="
+    cat /tmp/runtime/xvfb.log 2>/dev/null || true
+    echo "=== /tmp/runtime/x11vnc.log ==="
+    cat /tmp/runtime/x11vnc.log 2>/dev/null || true
+    echo "=== /tmp/runtime/novnc.log ==="
+    cat /tmp/runtime/novnc.log 2>/dev/null || true
+fi
+
 cleanup

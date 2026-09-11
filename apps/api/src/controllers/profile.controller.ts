@@ -1,5 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { browserManager } from '../managers/browser.manager.js';
+import { dockerManager } from '../managers/docker.manager.js';
 import { profileRepository } from '../repositories/profile.repository.js';
 import { eventRepository } from '../repositories/event.repository.js';
 import { CreateProfileDTO, UpdateProfileDTO } from '../types/index.js';
@@ -229,4 +230,17 @@ export async function navigateProfileHandler(
       error: { code: 'NAVIGATION_FAILED', message: err.message },
     });
   }
+}
+
+export async function getProfileLogsHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile || !profile.container_name) {
+    return reply.status(404).send({ success: false, error: 'Perfil não possui container ativo ou recente' });
+  }
+  const logs = await dockerManager.getContainerLogs(profile.container_name, 200);
+  return reply.send({ success: true, logs });
 }

@@ -10,7 +10,7 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   databaseUrl: process.env.DATABASE_URL || 'postgres://adsmanager:Samuca03146555%40@adsmanager_adsmanager:5432/adsmanager?sslmode=disable',
   profilesDataDir: process.env.PROFILES_DATA_DIR || '/data/browser-profiles',
-  browserImage: process.env.BROWSER_IMAGE || 'browser-profile:latest',
+  browserImage: process.env.BROWSER_IMAGE || 'browser-profile:v1.1',
   dockerSocket: process.env.DOCKER_SOCKET || (process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock'),
   ports: {
     novnc: {
@@ -27,8 +27,8 @@ export const config = {
     },
   },
   resources: {
-    memoryMb: parseInt(process.env.PROFILE_MEMORY_MB || '1024', 10),
-    cpuLimit: parseFloat(process.env.PROFILE_CPU_LIMIT || '1.0'),
+    memoryMb: parseInt(process.env.PROFILE_MEMORY_MB || '2048', 10),
+    cpuLimit: parseFloat(process.env.PROFILE_CPU_LIMIT || '2.0'),
   },
   publicUrl: process.env.PUBLIC_URL || 'http://localhost:3001',
 };

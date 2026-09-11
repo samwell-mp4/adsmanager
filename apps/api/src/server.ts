@@ -32,20 +32,29 @@ const fastify = Fastify({
   },
 });
 
-// Proxy VNC Traffic
-fastify.all('/vnc/:port/*', async (request, reply) => {
+// Proxy VNC HTTP Traffic
+const handleVncProxy = async (request: any, reply: any) => {
   const { port } = request.params as { port: string };
   const target = `http://127.0.0.1:${port}`;
-  
+
   // Strip the /vnc/:port prefix before proxying
   request.raw.url = request.raw.url?.replace(`/vnc/${port}`, '') || '/';
-  
+  if (!request.raw.url.startsWith('/')) {
+    request.raw.url = '/' + request.raw.url;
+  }
+
   proxy.web(request.raw, reply.raw, { target }, (err) => {
-    reply.status(502).send({ success: false, error: 'VNC Proxy Error' });
+    fastify.log.warn(`[VNC Proxy] Error proxying port ${port}: ${err.message}`);
+    if (!reply.raw.headersSent) {
+      reply.status(502).send({ success: false, error: 'VNC Proxy Error: ' + err.message });
+    }
   });
-  
-  return reply; // Fastify expects return for manual replies
-});
+
+  return reply;
+};
+
+fastify.all('/vnc/:port', handleVncProxy);
+fastify.all('/vnc/:port/*', handleVncProxy);
 
 // Global error handler
 fastify.setErrorHandler((error, _request, reply) => {
@@ -150,10 +159,21 @@ async function start() {
 
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
     fastify.server.on('upgrade', (req, socket, head) => {
-      if (req.url && req.url.startsWith('/vnc/')) {
-        const port = req.url.split('/')[2];
-        req.url = req.url.replace(`/vnc/${port}`, '') || '/';
-        proxy.ws(req, socket, head, { target: `http://127.0.0.1:${port}` });
+      try {
+        const urlObj = new URL(req.url || '', 'http://localhost');
+        const match = urlObj.pathname.match(/^\/vnc\/(\d+)(\/.*)?$/);
+        if (match) {
+          const port = match[1];
+          const subPath = (match[2] || '/') + urlObj.search;
+          req.url = subPath;
+          proxy.ws(req, socket, head, { target: `http://127.0.0.1:${port}` }, (err) => {
+            fastify.log.warn(`[VNC WS] Proxy error on port ${port}: ${err.message}`);
+            socket.destroy();
+          });
+          return;
+        }
+      } catch (err: any) {
+        fastify.log.error(`[VNC WS Upgrade Error]: ${err.message}`);
       }
     });
 

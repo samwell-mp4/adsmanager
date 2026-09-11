@@ -77,9 +77,14 @@ export class DockerManager {
   ): Promise<string> {
     const containerName = `browser-profile-${profile.uuid}`;
 
-    // Ensure host data directory exists
-    if (!fs.existsSync(profile.chrome_data_path)) {
-      fs.mkdirSync(profile.chrome_data_path, { recursive: true });
+    // Ensure host data directory exists with full permissions
+    try {
+      if (!fs.existsSync(profile.chrome_data_path)) {
+        fs.mkdirSync(profile.chrome_data_path, { recursive: true, mode: 0o777 });
+      }
+      fs.chmodSync(profile.chrome_data_path, 0o777);
+    } catch (e: any) {
+      console.warn('[DockerManager] Notice setting directory permissions:', e.message);
     }
 
     // Clean up existing dead container with the same name if exists
@@ -124,7 +129,7 @@ export class DockerManager {
           '5900/tcp': [{ HostPort: String(ports.vncPort), HostIp: '127.0.0.1' }],
           '9222/tcp': [{ HostPort: String(ports.cdpPort), HostIp: '0.0.0.0' }],
         },
-        ShmSize: 2 * 1024 * 1024 * 1024, // 2GB /dev/shm for Chrome
+        ShmSize: 1024 * 1024 * 1024, // 1GB /dev/shm for Chrome
         Memory: config.resources.memoryMb * 1024 * 1024,
         NanoCpus: Math.floor(config.resources.cpuLimit * 1e9),
         RestartPolicy: { Name: 'no' },
