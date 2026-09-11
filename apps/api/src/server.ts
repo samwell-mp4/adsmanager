@@ -158,7 +158,7 @@ async function start() {
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
 
-    // Multi-port listener: also listen on [80, 3000, 3001]
+    // Multi-port listener: also listen on [80, 3000, 3001] using proxy
     // so Easypanel/Traefik will NEVER get 502 regardless of which port is configured in the domain!
     const extraPorts = [80, 3000, 3001].filter((p) => p !== config.port);
     try {
@@ -166,13 +166,16 @@ async function start() {
       for (const p of extraPorts) {
         try {
           const extraServer = httpModule.default.createServer((req, res) => {
-            fastify.server.emit('request', req, res);
+            proxy.web(req, res, { target: `http://127.0.0.1:${config.port}` }, (err) => {
+              res.writeHead(502);
+              res.end('Proxy error: ' + err.message);
+            });
           });
           extraServer.on('upgrade', (req, socket, head) => {
-            fastify.server.emit('upgrade', req, socket, head);
+            proxy.ws(req, socket, head, { target: `http://127.0.0.1:${config.port}` });
           });
           extraServer.listen(p, config.host, () => {
-            console.log(`[API] Multi-port listener active on http://${config.host}:${p}`);
+            console.log(`[API] Multi-port listener active on http://${config.host}:${p} (forwarding to ${config.port})`);
           });
         } catch (e: any) {
           console.log(`[API] Multi-port listener on port ${p} skipped:`, e.message);
