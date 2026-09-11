@@ -103,6 +103,8 @@ google-chrome-stable \
     --disable-gpu \
     --enable-webgl \
     --disable-blink-features=AutomationControlled \
+    --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+    --enforce-webrtc-ip-permission-check \
     --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
     --password-store=basic \
     --use-mock-keychain \
