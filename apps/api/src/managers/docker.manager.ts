@@ -10,6 +10,125 @@ export class DockerManager {
     this.docker = new Docker({ socketPath: config.dockerSocket });
   }
 
+  getDocker(): Docker {
+    return this.docker;
+  }
+
+  private cachedHostIp: string | null = null;
+  private cachedNetworkName: string | null = null;
+
+  /**
+   * Discovers the network name of this API container
+   */
+  async getApiNetworkName(): Promise<string | null> {
+    if (this.cachedNetworkName !== null) return this.cachedNetworkName;
+
+    try {
+      const os = await import('os');
+      const selfContainer = this.docker.getContainer(os.hostname());
+      const data = await selfContainer.inspect();
+      const networks = Object.keys(data.NetworkSettings?.Networks || {});
+      const customNet = networks.find((n) => n !== 'bridge' && n !== 'host' && n !== 'none');
+      this.cachedNetworkName = customNet || networks[0] || null;
+      console.log(`[DockerManager] Detected API container network: ${this.cachedNetworkName}`);
+      return this.cachedNetworkName;
+    } catch (e: any) {
+      this.cachedNetworkName = null;
+      return null;
+    }
+  }
+
+  /**
+   * Discovers the host IP to reach published container ports from inside this container
+   */
+  async getHostGatewayIp(): Promise<string> {
+    if (this.cachedHostIp) return this.cachedHostIp;
+
+    if (process.env.DOCKER_HOST_IP) {
+      this.cachedHostIp = process.env.DOCKER_HOST_IP;
+      return this.cachedHostIp;
+    }
+
+    try {
+      const os = await import('os');
+      const selfContainer = this.docker.getContainer(os.hostname());
+      const data = await selfContainer.inspect();
+      const networks = data.NetworkSettings?.Networks || {};
+      for (const netName of Object.keys(networks)) {
+        if (networks[netName]?.Gateway) {
+          this.cachedHostIp = networks[netName].Gateway;
+          console.log(`[DockerManager] Detected Docker host gateway IP: ${this.cachedHostIp} on network ${netName}`);
+          return this.cachedHostIp;
+        }
+      }
+      if (data.NetworkSettings?.Gateway) {
+        this.cachedHostIp = data.NetworkSettings.Gateway;
+        return this.cachedHostIp;
+      }
+    } catch (e: any) {
+      // Not in Docker or inspect failed
+    }
+
+    this.cachedHostIp = process.platform === 'linux' ? '172.17.0.1' : '127.0.0.1';
+    return this.cachedHostIp;
+  }
+
+  /**
+   * Resolves target endpoint for a given noVNC port
+   */
+  async getTargetForPort(port: number): Promise<string> {
+    try {
+      const containers = await this.docker.listContainers();
+      for (const c of containers) {
+        const hasPort = c.Ports && c.Ports.some((p) => p.PublicPort === port);
+        if (hasPort) {
+          const networks = c.NetworkSettings?.Networks || {};
+          const ip = Object.values(networks)[0]?.IPAddress;
+          if (ip) {
+            return `http://${ip}:6080`;
+          }
+          const name = c.Names[0]?.replace(/^\//, '');
+          if (name) {
+            return `http://${name}:6080`;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[DockerManager] Error finding target for port:', e.message);
+    }
+
+    const hostIp = await this.getHostGatewayIp();
+    return `http://${hostIp}:${port}`;
+  }
+
+  /**
+   * Resolves target endpoint for a given CDP port
+   */
+  async getCdpTargetForPort(port: number): Promise<string> {
+    try {
+      const containers = await this.docker.listContainers();
+      for (const c of containers) {
+        const hasPort = c.Ports && c.Ports.some((p) => p.PublicPort === port);
+        if (hasPort) {
+          const networks = c.NetworkSettings?.Networks || {};
+          const ip = Object.values(networks)[0]?.IPAddress;
+          if (ip) {
+            return `http://${ip}:9222`;
+          }
+          const name = c.Names[0]?.replace(/^\//, '');
+          if (name) {
+            return `http://${name}:9222`;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[DockerManager] Error finding CDP target for port:', e.message);
+    }
+
+    const hostIp = await this.getHostGatewayIp();
+    return `http://${hostIp}:${port}`;
+  }
+
   /**
    * Health check for Docker engine
    */
@@ -109,12 +228,20 @@ export class DockerManager {
       }
     }
 
-    console.log(`[DockerManager] Creating container ${containerName} using image ${config.browserImage}...`);
+    const apiNetwork = await this.getApiNetworkName();
+    const networkingConfig = apiNetwork
+      ? {
+          EndpointsConfig: {
+            [apiNetwork]: {},
+          },
+        }
+      : undefined;
 
     const container = await this.docker.createContainer({
       Image: config.browserImage,
       name: containerName,
       Env: env,
+      NetworkingConfig: networkingConfig,
       ExposedPorts: {
         '6080/tcp': {},
         '5900/tcp': {},

@@ -35,7 +35,8 @@ const fastify = Fastify({
 // Proxy VNC HTTP Traffic
 const handleVncProxy = async (request: any, reply: any) => {
   const { port } = request.params as { port: string };
-  const target = `http://127.0.0.1:${port}`;
+  const portNum = parseInt(port, 10);
+  const target = await dockerManager.getTargetForPort(portNum);
 
   // Strip the /vnc/:port prefix before proxying
   request.raw.url = request.raw.url?.replace(`/vnc/${port}`, '') || '/';
@@ -44,7 +45,7 @@ const handleVncProxy = async (request: any, reply: any) => {
   }
 
   proxy.web(request.raw, reply.raw, { target }, (err) => {
-    fastify.log.warn(`[VNC Proxy] Error proxying port ${port}: ${err.message}`);
+    fastify.log.warn(`[VNC Proxy] Error proxying port ${port} to ${target}: ${err.message}`);
     if (!reply.raw.headersSent) {
       reply.status(502).send({ success: false, error: 'VNC Proxy Error: ' + err.message });
     }
@@ -158,16 +159,17 @@ async function start() {
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
 
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
-    fastify.server.on('upgrade', (req, socket, head) => {
+    fastify.server.on('upgrade', async (req, socket, head) => {
       try {
         const urlObj = new URL(req.url || '', 'http://localhost');
         const match = urlObj.pathname.match(/^\/vnc\/(\d+)(\/.*)?$/);
         if (match) {
-          const port = match[1];
+          const port = parseInt(match[1], 10);
           const subPath = (match[2] || '/') + urlObj.search;
           req.url = subPath;
-          proxy.ws(req, socket, head, { target: `http://127.0.0.1:${port}` }, (err) => {
-            fastify.log.warn(`[VNC WS] Proxy error on port ${port}: ${err.message}`);
+          const target = await dockerManager.getTargetForPort(port);
+          proxy.ws(req, socket, head, { target }, (err) => {
+            fastify.log.warn(`[VNC WS] Proxy error on port ${port} to ${target}: ${err.message}`);
             socket.destroy();
           });
           return;
