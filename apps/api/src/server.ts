@@ -6,6 +6,7 @@ import { runMigrations } from './db/migrate.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { proxyRoutes } from './routes/proxy.routes.js';
 import { profileRoutes } from './routes/profile.routes.js';
+import { extensionRoutes } from './routes/extension.routes.js';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,7 @@ const __dirname = path.dirname(__filename);
 const proxy = httpProxy.createProxyServer({ ws: true });
 
 const fastify = Fastify({
+  bodyLimit: 52428800, // 50MB for extensions zip uploads
   logger: {
     transport: {
       target: 'pino-pretty',
@@ -133,6 +135,7 @@ async function start() {
     await fastify.register(healthRoutes);
     await fastify.register(proxyRoutes);
     await fastify.register(profileRoutes);
+    await fastify.register(extensionRoutes);
 
     console.log('[API] Checking database connection...');
     const isDbConnected = await testDbConnection();

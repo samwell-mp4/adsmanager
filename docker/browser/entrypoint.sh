@@ -73,7 +73,28 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT SIGHUP
 
-# 6. Start Google Chrome Stable
+# 6. Detect custom extensions
+CUSTOM_EXTS=""
+if [ -d "/home/browser/profile/custom_extensions" ]; then
+    for ext_dir in /home/browser/profile/custom_extensions/*; do
+        if [ -d "$ext_dir" ] && [ -f "$ext_dir/manifest.json" ]; then
+            echo "[browser-container] Found extension: $ext_dir"
+            if [ -z "$CUSTOM_EXTS" ]; then
+                CUSTOM_EXTS="$ext_dir"
+            else
+                CUSTOM_EXTS="$CUSTOM_EXTS,$ext_dir"
+            fi
+        fi
+    done
+fi
+
+LOAD_EXT_FLAG=""
+if [ -n "$CUSTOM_EXTS" ]; then
+    echo "[browser-container] Enabling extensions: $CUSTOM_EXTS"
+    LOAD_EXT_FLAG="--load-extension=$CUSTOM_EXTS"
+fi
+
+# 7. Start Google Chrome Stable
 echo "[browser-container] Starting Google Chrome with CDP on port 9222..."
 google-chrome-stable \
     --no-sandbox \
@@ -84,7 +105,6 @@ google-chrome-stable \
     --use-mock-keychain \
     --disable-background-networking \
     --disable-default-apps \
-    --disable-extensions \
     --disable-sync \
     --disable-translate \
     --window-size=${SCREEN_WIDTH},${SCREEN_HEIGHT} \
@@ -95,6 +115,7 @@ google-chrome-stable \
     --no-first-run \
     --no-default-browser-check \
     --lang=${LOCALE} \
+    ${LOAD_EXT_FLAG} \
     ${CHROME_PROXY_ARGS} \
     "about:blank" &
 

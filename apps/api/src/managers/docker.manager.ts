@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
 import fs from 'fs';
+import path from 'path';
 import { config } from '../config/index.js';
 import { BrowserProfile, BrowserProxy, ProfileStatus } from '../types/index.js';
 
@@ -196,12 +197,17 @@ export class DockerManager {
   ): Promise<string> {
     const containerName = `browser-profile-${profile.uuid}`;
 
-    // Ensure host data directory exists with full permissions
+    // Ensure host data directory and custom_extensions exist with full permissions
     try {
       if (!fs.existsSync(profile.chrome_data_path)) {
         fs.mkdirSync(profile.chrome_data_path, { recursive: true, mode: 0o777 });
       }
+      const customExtDir = path.join(profile.chrome_data_path, 'custom_extensions');
+      if (!fs.existsSync(customExtDir)) {
+        fs.mkdirSync(customExtDir, { recursive: true, mode: 0o777 });
+      }
       fs.chmodSync(profile.chrome_data_path, 0o777);
+      fs.chmodSync(customExtDir, 0o777);
     } catch (e: any) {
       console.warn('[DockerManager] Notice setting directory permissions:', e.message);
     }

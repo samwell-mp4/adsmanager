@@ -182,4 +182,53 @@ export const api = {
     const res = await fetch(healthUrl);
     return res.json();
   },
+
+  // Custom Extensions (.zip)
+  async uploadProfileExtension(
+    profileId: number,
+    filename: string,
+    fileBase64: string
+  ): Promise<{ success: boolean; data: any }> {
+    const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, fileBase64 }),
+    });
+    return handleResponse<{ success: boolean; data: any }>(res);
+  },
+
+  async getProfileExtensions(profileId: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions`);
+    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
+    return json.data || [];
+  },
+
+  async deleteProfileExtension(profileId: number, extId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/${extId}`, {
+      method: 'DELETE',
+    });
+    await handleResponse<any>(res);
+  },
+
+  async uploadGlobalExtension(filename: string, fileBase64: string): Promise<{ success: boolean; data: any }> {
+    const res = await fetch(`${API_BASE}/extensions/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, fileBase64 }),
+    });
+    return handleResponse<{ success: boolean; data: any }>(res);
+  },
+
+  async getGlobalExtensions(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/extensions`);
+    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
+    return json.data || [];
+  },
+
+  async deleteGlobalExtension(extId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/extensions/${extId}`, {
+      method: 'DELETE',
+    });
+    await handleResponse<any>(res);
+  },
 };
