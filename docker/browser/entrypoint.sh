@@ -47,10 +47,10 @@ if [ -n "$PROXY_HOST" ]; then
         LOCAL_PROXY_PORT=8888 node /usr/local/bin/proxy-forwarder.js > /tmp/runtime/proxy.log 2>&1 &
         PROXY_PID=$!
         sleep 1
-        CHROME_PROXY_ARGS="--proxy-server=http://127.0.0.1:8888"
+        CHROME_PROXY_ARGS="--proxy-server=http://127.0.0.1:8888 --proxy-bypass-list=<-loopback>;localhost;127.0.0.1;::1 --disable-quic"
     else
         echo "[browser-container] Using direct unauthenticated proxy -> ${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
-        CHROME_PROXY_ARGS="--proxy-server=${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
+        CHROME_PROXY_ARGS="--proxy-server=${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT} --proxy-bypass-list=<-loopback>;localhost;127.0.0.1;::1 --disable-quic"
     fi
 fi
 
@@ -128,6 +128,8 @@ echo "[browser-container] Chrome exited with code: $CHROME_EXIT"
 
 # Print logs for diagnostics if Chrome crashed
 if [ "$CHROME_EXIT" -ne 0 ]; then
+    echo "=== /tmp/runtime/proxy.log ==="
+    cat /tmp/runtime/proxy.log 2>/dev/null || true
     echo "=== /tmp/runtime/xvfb.log ==="
     cat /tmp/runtime/xvfb.log 2>/dev/null || true
     echo "=== /tmp/runtime/x11vnc.log ==="

@@ -1,5 +1,5 @@
 /**
- * Local Proxy Forwarder
+ * Local Proxy Forwarder (v1.2)
  * Runs inside the browser container on 127.0.0.1:8888.
  * Transparently forwards HTTP/HTTPS CONNECT traffic to upstream proxy
  * with proper Basic Authentication or SOCKS5 support, avoiding Chromium's
@@ -27,8 +27,6 @@ console.log(`[proxy-forwarder] Starting local forwarder -> ${PROXY_TYPE}://${PRO
 const authHeader = PROXY_USER ? 'Basic ' + Buffer.from(`${PROXY_USER}:${PROXY_PASS}`).toString('base64') : null;
 
 const server = http.createServer((req, res) => {
-  // Handle normal HTTP requests
-  const parsed = url.parse(req.url);
   const options = {
     hostname: PROXY_HOST,
     port: PROXY_PORT,
@@ -48,16 +46,17 @@ const server = http.createServer((req, res) => {
 
   proxyReq.on('error', (err) => {
     console.error('[proxy-forwarder] HTTP forward error:', err.message);
-    res.writeHead(502, { 'Content-Type': 'text/plain' });
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'text/plain' });
+    }
     res.end(`Proxy Gateway Error: ${err.message}`);
   });
 
   req.pipe(proxyReq, { end: true });
 });
 
-// Handle HTTPS CONNECT tunnel
+// Handle HTTPS CONNECT tunnel with binary-safe buffering
 server.on('connect', (req, clientSocket, head) => {
-  // Connect to upstream proxy
   const proxySocket = net.connect(PROXY_PORT, PROXY_HOST, () => {
     let connectReq = `CONNECT ${req.url} HTTP/1.1\r\nHost: ${req.url}\r\n`;
     if (authHeader) {
@@ -65,34 +64,41 @@ server.on('connect', (req, clientSocket, head) => {
     }
     connectReq += '\r\n';
 
+    // Do NOT write head here; head is TLS data that must only be sent after upstream sends 200 OK
     proxySocket.write(connectReq);
-    if (head && head.length > 0) {
-      proxySocket.write(head);
-    }
   });
 
   let handshakeComplete = false;
-  let responseBuffer = '';
+  let buffer = Buffer.alloc(0);
 
   proxySocket.on('data', (chunk) => {
     if (!handshakeComplete) {
-      responseBuffer += chunk.toString();
-      if (responseBuffer.includes('\r\n\r\n')) {
+      buffer = Buffer.concat([buffer, chunk]);
+      const idx = buffer.indexOf('\r\n\r\n');
+      if (idx !== -1) {
         handshakeComplete = true;
-        const [headers, ...rest] = responseBuffer.split('\r\n\r\n');
-        if (headers.includes(' 200 ') || headers.includes(' 200 OK')) {
-          clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-          const remaining = rest.join('\r\n\r\n');
-          if (remaining.length > 0) {
+        const headerStr = buffer.subarray(0, idx).toString('latin1');
+        const remaining = buffer.subarray(idx + 4);
+
+        if (headerStr.includes(' 200 ') || headerStr.includes(' 200 OK')) {
+          if (clientSocket.writable) {
+            clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          }
+          if (remaining.length > 0 && clientSocket.writable) {
             clientSocket.write(remaining);
+          }
+          if (head && head.length > 0 && proxySocket.writable) {
+            proxySocket.write(head);
           }
           proxySocket.pipe(clientSocket);
           clientSocket.pipe(proxySocket);
         } else {
-          console.error('[proxy-forwarder] Upstream proxy rejected CONNECT:', headers.split('\r\n')[0]);
-          clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-          clientSocket.end();
-          proxySocket.end();
+          console.error('[proxy-forwarder] Upstream proxy rejected CONNECT:', headerStr.split('\r\n')[0]);
+          if (clientSocket.writable) {
+            clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+          }
+          clientSocket.destroy();
+          proxySocket.destroy();
         }
       }
     }
@@ -100,12 +106,23 @@ server.on('connect', (req, clientSocket, head) => {
 
   proxySocket.on('error', (err) => {
     console.error('[proxy-forwarder] Tunnel socket error:', err.message);
-    clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-    clientSocket.end();
+    if (clientSocket.writable) {
+      clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    }
+    clientSocket.destroy();
+    proxySocket.destroy();
   });
 
-  clientSocket.on('error', (err) => {
+  clientSocket.on('error', () => {
+    proxySocket.destroy();
+  });
+
+  clientSocket.on('end', () => {
     proxySocket.end();
+  });
+
+  proxySocket.on('end', () => {
+    clientSocket.end();
   });
 });
 

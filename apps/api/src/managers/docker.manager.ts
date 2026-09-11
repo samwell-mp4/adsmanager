@@ -208,6 +208,53 @@ export class DockerManager {
       }
       fs.chmodSync(profile.chrome_data_path, 0o777);
       fs.chmodSync(customExtDir, 0o777);
+
+      // Auto-inject Chrome Proxy Authentication Extension for bulletproof credentials handling
+      if (proxy && proxy.username && proxy.password) {
+        try {
+          const proxyExtDir = path.join(customExtDir, '__proxy_auth');
+          if (!fs.existsSync(proxyExtDir)) {
+            fs.mkdirSync(proxyExtDir, { recursive: true, mode: 0o777 });
+          }
+          const manifestJson = {
+            version: '1.0.0',
+            manifest_version: 2,
+            name: 'Chrome Proxy Auth',
+            permissions: ['proxy', 'webRequest', 'webRequestBlocking', '<all_urls>'],
+            background: {
+              scripts: ['background.js'],
+            },
+            minimum_chrome_version: '22.0.0',
+          };
+          fs.writeFileSync(path.join(proxyExtDir, 'manifest.json'), JSON.stringify(manifestJson, null, 2));
+          const backgroundJs = `
+chrome.webRequest.onAuthRequired.addListener(
+  function(details) {
+    return {
+      authCredentials: {
+        username: ${JSON.stringify(proxy.username)},
+        password: ${JSON.stringify(proxy.password)}
+      }
+    };
+  },
+  { urls: ["<all_urls>"] },
+  ["blocking"]
+);
+`;
+          fs.writeFileSync(path.join(proxyExtDir, 'background.js'), backgroundJs);
+          fs.chmodSync(proxyExtDir, 0o777);
+          console.log(`[DockerManager] Injected native proxy auth extension for ${proxy.host}:${proxy.port}`);
+        } catch (extErr: any) {
+          console.warn('[DockerManager] Notice injecting proxy auth extension:', extErr.message);
+        }
+      } else {
+        try {
+          const proxyExtDir = path.join(customExtDir, '__proxy_auth');
+          if (fs.existsSync(proxyExtDir)) {
+            fs.rmSync(proxyExtDir, { recursive: true, force: true });
+          }
+        } catch {}
+      }
     } catch (e: any) {
       console.warn('[DockerManager] Notice setting directory permissions:', e.message);
     }

@@ -109,6 +109,7 @@ export class ExtensionService {
 
     for (const item of items) {
       if (item.isDirectory()) {
+        if (item.name.startsWith('__')) continue;
         const extDir = path.join(baseDir, item.name);
         const manifestPath = path.join(extDir, 'manifest.json');
         
