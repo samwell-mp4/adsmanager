@@ -79,7 +79,7 @@ async function start() {
       try {
         const staticPath = path.join(__dirname, '../../web/dist');
         const exists = fs.existsSync(staticPath);
-        let files = [];
+        let files: string[] = [];
         if (exists) {
           files = fs.readdirSync(staticPath);
         }
