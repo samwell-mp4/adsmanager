@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 export const config = {
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parseInt(process.env.PORT || '3000', 10),
   host: process.env.HOST || '0.0.0.0',
   databaseUrl: process.env.DATABASE_URL || 'postgres://adsmanager:Samuca03146555%40@adsmanager_adsmanager:5432/adsmanager?sslmode=disable',
   profilesDataDir: process.env.PROFILES_DATA_DIR || '/data/browser-profiles',

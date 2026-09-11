@@ -1,6 +1,7 @@
 import { BrowserProfile, BrowserProxy, BrowserEvent, CreateProfileDTO, CreateProxyDTO } from '../types/index.js';
 
-const API_BASE = '/api';
+const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || '';
+const API_BASE = RAW_API_URL ? `${RAW_API_URL.replace(/\/$/, '')}/api` : '/api';
 
 async function handleResponse<T>(res: Response): Promise<T> {
   const json = await res.json();
@@ -129,7 +130,8 @@ export const api = {
 
   // Health
   async getHealth(): Promise<{ status: string; database: boolean; docker: boolean; timestamp: string }> {
-    const res = await fetch('/health');
+    const healthUrl = RAW_API_URL ? `${RAW_API_URL.replace(/\/$/, '')}/health` : '/health';
+    const res = await fetch(healthUrl);
     return res.json();
   },
 };

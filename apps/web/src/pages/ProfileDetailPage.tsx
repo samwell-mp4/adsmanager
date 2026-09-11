@@ -156,8 +156,10 @@ export const ProfileDetailPage: React.FC = () => {
   }
 
   const isRunning = profile.status === 'running';
+  const rawApi = (import.meta as any).env?.VITE_API_URL;
+  const base = rawApi ? new URL(rawApi) : window.location;
   const vncUrl = profile.novnc_port
-    ? `${window.location.protocol}//${window.location.host}/vnc/${profile.novnc_port}/vnc.html?autoconnect=true&resize=scale&path=vnc/${profile.novnc_port}/websockify`
+    ? `${base.protocol}//${base.host}/vnc/${profile.novnc_port}/vnc.html?autoconnect=true&resize=scale&path=vnc/${profile.novnc_port}/websockify`
     : null;
 
   return (

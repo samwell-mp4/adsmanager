@@ -99,6 +99,18 @@ async function start() {
       console.log('[API] Files in static directory:', fs.readdirSync(staticPath));
     }
 
+    // Enable CORS for web frontend
+    await fastify.register(cors, {
+      origin: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    });
+
+    // Serve static files from React frontend
+    await fastify.register(fastifyStatic, {
+      root: staticPath,
+      prefix: '/',
+    });
+
     // Explicit root route
     fastify.get('/', (request, reply) => {
       return (reply as any).sendFile('index.html');
@@ -106,7 +118,6 @@ async function start() {
 
     fastify.get('/debug-files', (request, reply) => {
       try {
-        const staticPath = path.join(__dirname, '../../web/dist');
         const exists = fs.existsSync(staticPath);
         let files: string[] = [];
         if (exists) {
@@ -116,18 +127,6 @@ async function start() {
       } catch (err: any) {
         return { success: false, error: err.message };
       }
-    });
-
-    // Serve static files from React frontend
-    await fastify.register(fastifyStatic, {
-      root: staticPath,
-      prefix: '/',
-    });
-
-    // Enable CORS for web frontend
-    await fastify.register(cors, {
-      origin: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     });
 
     // Register routes
@@ -163,31 +162,25 @@ async function start() {
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
 
-    // Multi-port listener: also listen on [80, 3000, 3001] using proxy
-    // so Easypanel/Traefik will NEVER get 502 regardless of which port is configured in the domain!
-    const extraPorts = [80, 3000, 3001].filter((p) => p !== config.port);
+    // Dual-port listener: also listen on port 3000 (if primary is 3001) or 3001 (if primary is 3000)
+    // so Easypanel / Traefik will ALWAYS connect regardless of whether 3000 or 3001 is mapped in domains!
+    const altPort = config.port === 3000 ? 3001 : 3000;
     try {
       const httpModule = await import('http');
-      for (const p of extraPorts) {
-        try {
-          const extraServer = httpModule.default.createServer((req, res) => {
-            proxy.web(req, res, { target: `http://127.0.0.1:${config.port}` }, (err) => {
-              res.writeHead(502);
-              res.end('Proxy error: ' + err.message);
-            });
-          });
-          extraServer.on('upgrade', (req, socket, head) => {
-            proxy.ws(req, socket, head, { target: `http://127.0.0.1:${config.port}` });
-          });
-          extraServer.listen(p, config.host, () => {
-            console.log(`[API] Multi-port listener active on http://${config.host}:${p} (forwarding to ${config.port})`);
-          });
-        } catch (e: any) {
-          console.log(`[API] Multi-port listener on port ${p} skipped:`, e.message);
-        }
-      }
+      const altServer = httpModule.default.createServer((req, res) => {
+        fastify.server.emit('request', req, res);
+      });
+      altServer.on('upgrade', (req, socket, head) => {
+        fastify.server.emit('upgrade', req, socket, head);
+      });
+      altServer.on('error', (err: any) => {
+        console.log(`[API] Alternate listener on port ${altPort} notice:`, err.message);
+      });
+      altServer.listen(altPort, config.host, () => {
+        console.log(`[API] Alternate listener active on http://${config.host}:${altPort}`);
+      });
     } catch (e: any) {
-      console.log('[API] Multi-port setup notice:', e.message);
+      console.log(`[API] Alternate listener setup notice:`, e.message);
     }
 
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
