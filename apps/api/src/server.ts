@@ -11,6 +11,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fastifyStatic from '@fastify/static';
 
+import { dockerManager } from './managers/docker.manager.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -111,6 +113,16 @@ async function start() {
       }
     } else {
       console.warn('[API] Warning: Database is not reachable at startup. API starting with degraded health.');
+    }
+
+    // Check Docker and prepare image
+    console.log('[API] Checking Docker daemon connection...');
+    const isDockerConnected = await dockerManager.ping();
+    if (isDockerConnected) {
+      console.log('[API] Docker connected. Ensuring browser image is built...');
+      await dockerManager.ensureImageExists();
+    } else {
+      console.warn('[API] Warning: Docker daemon is not reachable at startup. Profile creation will fail.');
     }
 
     await fastify.listen({ port: config.port, host: config.host });

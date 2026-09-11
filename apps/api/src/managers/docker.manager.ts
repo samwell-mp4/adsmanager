@@ -24,6 +24,50 @@ export class DockerManager {
   }
 
   /**
+   * Ensures the browser-profile image exists, builds it if not
+   */
+  async ensureImageExists(): Promise<void> {
+    try {
+      const images = await this.docker.listImages();
+      const hasImage = images.some(img => img.RepoTags && img.RepoTags.includes(config.browserImage));
+      
+      if (!hasImage) {
+        console.log(`[DockerManager] Image ${config.browserImage} not found. Building from source...`);
+        console.log(`[DockerManager] This may take a few minutes depending on your VPS speed.`);
+        
+        // Use dynamic import for tar-fs to avoid top-level require issues
+        // @ts-ignore
+        const tarFs = await import('tar-fs');
+        const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+        const dockerDir = path.join(__dirname, '../../../../docker/browser');
+        
+        const stream = await this.docker.buildImage(tarFs.default.pack(dockerDir), {
+          t: config.browserImage
+        });
+        
+        await new Promise((resolve, reject) => {
+          this.docker.modem.followProgress(
+            stream, 
+            (err, res) => err ? reject(err) : resolve(res),
+            (event) => {
+              if (event.stream) process.stdout.write(event.stream);
+            }
+          );
+        });
+        console.log(`[DockerManager] Image ${config.browserImage} built successfully!`);
+      } else {
+        console.log(`[DockerManager] Image ${config.browserImage} is present.`);
+      }
+    } catch (err: any) {
+      console.error(`[DockerManager] Failed to ensure image exists:`, err.message);
+    }
+  }
+
+  /**
    * Creates and starts a container for a browser profile
    */
   async createProfileContainer(
