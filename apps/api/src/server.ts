@@ -158,22 +158,28 @@ async function start() {
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
 
-    // Dual-port listener: also listen on port 3000 (if primary is 3001) or 3001 (if primary is 3000)
-    // so Easypanel/Traefik will NEVER get 502 regardless of whether 3000 or 3001 is mapped!
-    const altPort = config.port === 3000 ? 3001 : 3000;
+    // Multi-port listener: also listen on [80, 3000, 3001]
+    // so Easypanel/Traefik will NEVER get 502 regardless of which port is configured in the domain!
+    const extraPorts = [80, 3000, 3001].filter((p) => p !== config.port);
     try {
       const httpModule = await import('http');
-      const altServer = httpModule.default.createServer((req, res) => {
-        fastify.server.emit('request', req, res);
-      });
-      altServer.on('upgrade', (req, socket, head) => {
-        fastify.server.emit('upgrade', req, socket, head);
-      });
-      altServer.listen(altPort, config.host, () => {
-        console.log(`[API] Alternate listener active on http://${config.host}:${altPort}`);
-      });
+      for (const p of extraPorts) {
+        try {
+          const extraServer = httpModule.default.createServer((req, res) => {
+            fastify.server.emit('request', req, res);
+          });
+          extraServer.on('upgrade', (req, socket, head) => {
+            fastify.server.emit('upgrade', req, socket, head);
+          });
+          extraServer.listen(p, config.host, () => {
+            console.log(`[API] Multi-port listener active on http://${config.host}:${p}`);
+          });
+        } catch (e: any) {
+          console.log(`[API] Multi-port listener on port ${p} skipped:`, e.message);
+        }
+      }
     } catch (e: any) {
-      console.log(`[API] Alternate listener on port ${altPort} skipped:`, e.message);
+      console.log('[API] Multi-port setup notice:', e.message);
     }
 
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
