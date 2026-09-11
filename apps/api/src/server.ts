@@ -75,6 +75,20 @@ async function start() {
       return (reply as any).sendFile('index.html');
     });
 
+    fastify.get('/debug-files', (request, reply) => {
+      try {
+        const staticPath = path.join(__dirname, '../../web/dist');
+        const exists = fs.existsSync(staticPath);
+        let files = [];
+        if (exists) {
+          files = fs.readdirSync(staticPath);
+        }
+        return { success: true, __dirname, staticPath, exists, files };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    });
+
     // Enable CORS for web frontend
     await fastify.register(cors, {
       origin: true,
