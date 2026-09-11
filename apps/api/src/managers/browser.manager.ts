@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config/index.js';
 import { dockerManager } from './docker.manager.js';
@@ -75,6 +76,23 @@ export class BrowserManager {
         containerName,
         ports,
       });
+
+      // Auto-inject saved cookies if cookies.json exists in profile directory
+      setTimeout(async () => {
+        try {
+          const cookieFile = path.join(profile.chrome_data_path, 'cookies.json');
+          if (fs.existsSync(cookieFile)) {
+            const raw = fs.readFileSync(cookieFile, 'utf-8');
+            const savedCookies = JSON.parse(raw);
+            if (Array.isArray(savedCookies) && savedCookies.length > 0) {
+              await automationService.setCookies(ports.cdpPort, savedCookies, profile.chrome_data_path);
+              console.log(`[BrowserManager] Auto-restored ${savedCookies.length} cookies on profile #${profileId} startup.`);
+            }
+          }
+        } catch (cookieErr: any) {
+          console.warn(`[BrowserManager] Notice auto-injecting cookies: ${cookieErr.message}`);
+        }
+      }, 2500);
 
       const updated = await profileRepository.findById(profileId);
       return updated!;

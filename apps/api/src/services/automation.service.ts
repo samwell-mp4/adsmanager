@@ -144,18 +144,47 @@ export class AutomationService {
         try {
           const context = browser.contexts()[0];
           if (context && cookies.length > 0) {
-            const formatted = cookies.map((c: any) => ({
-              name: String(c.name || ''),
-              value: String(c.value || ''),
-              domain: String(c.domain || '').replace(/^\./, ''),
-              path: c.path || '/',
-              expires: typeof c.expirationDate === 'number' ? Math.floor(c.expirationDate) : (typeof c.expires === 'number' ? Math.floor(c.expires) : undefined),
-              httpOnly: Boolean(c.httpOnly),
-              secure: Boolean(c.secure),
-              sameSite: ['Strict', 'Lax', 'None'].includes(c.sameSite) ? c.sameSite : 'Lax',
-            })).filter((c: any) => c.name && c.domain);
+            const page = context.pages()[0] || (await context.newPage());
+            const cdpSession = await context.newCDPSession(page);
 
-            await context.addCookies(formatted);
+            const cdpCookies = cookies.map((c: any) => {
+              let sSite: 'Strict' | 'Lax' | 'None' = 'Lax';
+              const rawSameSite = String(c.sameSite || '').toLowerCase();
+              if (rawSameSite === 'no_restriction' || rawSameSite === 'none') {
+                sSite = 'None';
+              } else if (rawSameSite === 'strict') {
+                sSite = 'Strict';
+              }
+
+              let domain = String(c.domain || '').trim();
+              if (domain && !domain.startsWith('.') && !c.hostOnly) {
+                domain = '.' + domain;
+              }
+
+              let expires = c.expirationDate || c.expires;
+              if (typeof expires === 'number' && expires > 1e11) {
+                expires = Math.floor(expires / 1000);
+              }
+
+              return {
+                name: String(c.name || '').trim(),
+                value: String(c.value || ''),
+                domain: domain || undefined,
+                path: c.path || '/',
+                expires: typeof expires === 'number' ? Math.floor(expires) : undefined,
+                httpOnly: Boolean(c.httpOnly),
+                secure: sSite === 'None' ? true : Boolean(c.secure),
+                sameSite: sSite,
+              };
+            }).filter((c: any) => c.name && c.domain);
+
+            try {
+              await cdpSession.send('Network.setCookies', { cookies: cdpCookies });
+              console.log(`[AutomationService] Injected ${cdpCookies.length} cookies via CDP Network.setCookies`);
+            } catch (cdpErr: any) {
+              console.warn(`[AutomationService] Network.setCookies failed, trying context.addCookies: ${cdpErr.message}`);
+              await context.addCookies(cdpCookies as any);
+            }
           }
         } finally {
           await browser.close();

@@ -255,6 +255,44 @@ chrome.webRequest.onAuthRequired.addListener(
           }
         } catch {}
       }
+
+      // Auto-inject Stealth Anti-Detection Extension to strip navigator.webdriver and match genuine browser
+      try {
+        const stealthExtDir = path.join(customExtDir, '__anti_detect');
+        if (!fs.existsSync(stealthExtDir)) {
+          fs.mkdirSync(stealthExtDir, { recursive: true, mode: 0o777 });
+        }
+        const stealthManifest = {
+          version: '1.0.0',
+          manifest_version: 2,
+          name: 'Stealth Shield',
+          content_scripts: [
+            {
+              matches: ['<all_urls>'],
+              js: ['stealth.js'],
+              run_at: 'document_start',
+              all_frames: true,
+            },
+          ],
+        };
+        fs.writeFileSync(path.join(stealthExtDir, 'manifest.json'), JSON.stringify(stealthManifest, null, 2));
+        const stealthJs = `
+try {
+  Object.defineProperty(navigator, 'webdriver', {
+    get: () => undefined,
+  });
+  delete navigator.__proto__.webdriver;
+} catch (e) {}
+
+if (!window.chrome) {
+  window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {} };
+}
+`;
+        fs.writeFileSync(path.join(stealthExtDir, 'stealth.js'), stealthJs);
+        fs.chmodSync(stealthExtDir, 0o777);
+      } catch (stealthErr: any) {
+        console.warn('[DockerManager] Notice injecting stealth extension:', stealthErr.message);
+      }
     } catch (e: any) {
       console.warn('[DockerManager] Notice setting directory permissions:', e.message);
     }

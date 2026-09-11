@@ -94,16 +94,18 @@ if [ -n "$CUSTOM_EXTS" ]; then
     LOAD_EXT_FLAG="--load-extension=$CUSTOM_EXTS"
 fi
 
-# 7. Start Google Chrome Stable
-echo "[browser-container] Starting Google Chrome with CDP on port 9222..."
+# 7. Start Google Chrome Stable with Anti-Detect Stealth Flags
+echo "[browser-container] Starting Google Chrome with stealth flags on port 9222..."
 google-chrome-stable \
     --no-sandbox \
+    --test-type \
     --disable-dev-shm-usage \
     --disable-gpu \
     --disable-software-rasterizer \
+    --disable-blink-features=AutomationControlled \
+    --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
     --password-store=basic \
     --use-mock-keychain \
-    --disable-background-networking \
     --disable-default-apps \
     --disable-sync \
     --disable-translate \
