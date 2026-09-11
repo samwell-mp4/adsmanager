@@ -32,6 +32,11 @@ const fastify = Fastify({
   },
 });
 
+// Log every incoming request immediately so it is 100% visible in Easypanel logs
+fastify.addHook('onRequest', async (request) => {
+  console.log(`[HTTP INCOMING] ${request.method} ${request.url} from ${request.ip}`);
+});
+
 // Proxy VNC HTTP Traffic
 const handleVncProxy = async (request: any, reply: any) => {
   const { port } = request.params as { port: string };
