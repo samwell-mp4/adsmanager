@@ -16,6 +16,10 @@ import {
   stopProfileHandler,
   updateProfileHandler,
   updateProfileProxyHandler,
+  getProfileCookiesHandler,
+  setProfileCookiesHandler,
+  clearProfileCookiesHandler,
+  clearProfileCacheHandler,
 } from '../controllers/profile.controller.js';
 
 export async function profileRoutes(fastify: FastifyInstance) {
@@ -40,4 +44,10 @@ export async function profileRoutes(fastify: FastifyInstance) {
   fastify.get('/api/profiles/:id/logs', getProfileLogsHandler);
   fastify.get('/api/profiles/:id/pages', getProfilePagesHandler);
   fastify.post('/api/profiles/:id/navigate', navigateProfileHandler);
+
+  // Cookies & Cache Management
+  fastify.get('/api/profiles/:id/cookies', getProfileCookiesHandler);
+  fastify.post('/api/profiles/:id/cookies', setProfileCookiesHandler);
+  fastify.delete('/api/profiles/:id/cookies', clearProfileCookiesHandler);
+  fastify.post('/api/profiles/:id/clear-cache', clearProfileCacheHandler);
 }

@@ -80,6 +80,152 @@ export class AutomationService {
       await browser.close();
     }
   }
+
+  /**
+   * Retrieves all cookies from active browser contexts or disk backup
+   */
+  async getCookies(cdpPort?: number, profileDataDir?: string): Promise<any[]> {
+    if (cdpPort) {
+      try {
+        const chromium = await this.getChromium();
+        const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
+        const browser = await chromium.connectOverCDP(endpoint);
+        try {
+          const context = browser.contexts()[0];
+          if (context) {
+            const cookies = await context.cookies();
+            return cookies;
+          }
+        } finally {
+          await browser.close();
+        }
+      } catch (e: any) {
+        console.warn(`[AutomationService] Could not fetch cookies via CDP: ${e.message}`);
+      }
+    }
+
+    // Fallback to disk cookies.json
+    if (profileDataDir) {
+      const fs = await import('fs');
+      const path = await import('path');
+      const cookieFile = path.join(profileDataDir, 'cookies.json');
+      if (fs.existsSync(cookieFile)) {
+        try {
+          return JSON.parse(fs.readFileSync(cookieFile, 'utf-8'));
+        } catch {
+          return [];
+        }
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * Injects cookies into active browser and saves to disk backup
+   */
+  async setCookies(cdpPort?: number, cookies: any[] = [], profileDataDir?: string): Promise<{ success: boolean; count: number }> {
+    // 1. Save to disk if dir provided
+    if (profileDataDir) {
+      const fs = await import('fs');
+      const path = await import('path');
+      if (!fs.existsSync(profileDataDir)) {
+        fs.mkdirSync(profileDataDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(profileDataDir, 'cookies.json'), JSON.stringify(cookies, null, 2), 'utf-8');
+    }
+
+    // 2. Inject via CDP if running
+    if (cdpPort) {
+      try {
+        const chromium = await this.getChromium();
+        const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
+        const browser = await chromium.connectOverCDP(endpoint);
+        try {
+          const context = browser.contexts()[0];
+          if (context && cookies.length > 0) {
+            const formatted = cookies.map((c: any) => ({
+              name: String(c.name || ''),
+              value: String(c.value || ''),
+              domain: String(c.domain || '').replace(/^\./, ''),
+              path: c.path || '/',
+              expires: typeof c.expirationDate === 'number' ? Math.floor(c.expirationDate) : (typeof c.expires === 'number' ? Math.floor(c.expires) : undefined),
+              httpOnly: Boolean(c.httpOnly),
+              secure: Boolean(c.secure),
+              sameSite: ['Strict', 'Lax', 'None'].includes(c.sameSite) ? c.sameSite : 'Lax',
+            })).filter((c: any) => c.name && c.domain);
+
+            await context.addCookies(formatted);
+          }
+        } finally {
+          await browser.close();
+        }
+      } catch (e: any) {
+        console.warn(`[AutomationService] Could not inject cookies via CDP: ${e.message}`);
+      }
+    }
+
+    return { success: true, count: cookies.length };
+  }
+
+  /**
+   * Clears cookies from active browser and deletes cookies.json
+   */
+  async clearCookies(cdpPort?: number, profileDataDir?: string): Promise<{ success: boolean }> {
+    if (profileDataDir) {
+      const fs = await import('fs');
+      const path = await import('path');
+      const cookieFile = path.join(profileDataDir, 'cookies.json');
+      if (fs.existsSync(cookieFile)) {
+        fs.unlinkSync(cookieFile);
+      }
+    }
+
+    if (cdpPort) {
+      try {
+        const chromium = await this.getChromium();
+        const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
+        const browser = await chromium.connectOverCDP(endpoint);
+        try {
+          const context = browser.contexts()[0];
+          if (context) {
+            await context.clearCookies();
+          }
+        } finally {
+          await browser.close();
+        }
+      } catch (e: any) {
+        console.warn(`[AutomationService] Could not clear cookies via CDP: ${e.message}`);
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Clears browser cache & storage
+   */
+  async clearCache(cdpPort: number): Promise<{ success: boolean }> {
+    try {
+      const chromium = await this.getChromium();
+      const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
+      const browser = await chromium.connectOverCDP(endpoint);
+      try {
+        const context = browser.contexts()[0];
+        if (context) {
+          const page = context.pages()[0] || (await context.newPage());
+          const client = await context.newCDPSession(page);
+          await client.send('Network.clearBrowserCache');
+          await client.send('Network.clearBrowserCookies');
+        }
+      } finally {
+        await browser.close();
+      }
+      return { success: true };
+    } catch (e: any) {
+      throw new Error(`Falha ao limpar cache: ${e.message}`);
+    }
+  }
 }
 
 export const automationService = new AutomationService();

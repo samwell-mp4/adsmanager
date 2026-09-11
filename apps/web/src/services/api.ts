@@ -99,19 +99,67 @@ export const api = {
     return handleResponse<{ success: boolean; finalUrl: string; title: string }>(res);
   },
 
+  // Cookies
+  async getCookies(id: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/profiles/${id}/cookies`);
+    return handleResponse<any[]>(res);
+  },
+
+  async setCookies(id: number, cookies: any[] | string): Promise<{ success: boolean; count: number; message: string }> {
+    const res = await fetch(`${API_BASE}/profiles/${id}/cookies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies }),
+    });
+    return handleResponse<{ success: boolean; count: number; message: string }>(res);
+  },
+
+  async clearCookies(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/profiles/${id}/cookies`, {
+      method: 'DELETE',
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  // Cache & Storage
+  async clearCache(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/profiles/${id}/clear-cache`, {
+      method: 'POST',
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async updateProfileGroup(id: number, group_name: string): Promise<BrowserProfile> {
+    const res = await fetch(`${API_BASE}/profiles/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_name }),
+    });
+    return handleResponse<BrowserProfile>(res);
+  },
+
   // Proxies
   async getProxies(): Promise<BrowserProxy[]> {
     const res = await fetch(`${API_BASE}/proxies`);
     return handleResponse<BrowserProxy[]>(res);
   },
 
-  async createProxy(data: CreateProxyDTO): Promise<BrowserProxy> {
+  async createProxy(data: CreateProxyDTO & { raw?: string; test_now?: boolean }): Promise<BrowserProxy> {
     const res = await fetch(`${API_BASE}/proxies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
     return handleResponse<BrowserProxy>(res);
+  },
+
+  async parseProxy(raw: string): Promise<{ success: boolean; data: any }> {
+    const res = await fetch(`${API_BASE}/proxies/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw }),
+    });
+    return res.json();
   },
 
   async deleteProxy(id: number): Promise<void> {

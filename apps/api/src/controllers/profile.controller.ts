@@ -241,6 +241,76 @@ export async function getProfileLogsHandler(
   if (!profile || !profile.container_name) {
     return reply.status(404).send({ success: false, error: 'Perfil não possui container ativo ou recente' });
   }
-  const logs = await dockerManager.getContainerLogs(profile.container_name, 200);
-  return reply.send({ success: true, logs });
+  try {
+    const logs = await dockerManager.getContainerLogs(profile.container_name, 200);
+    return reply.send({ success: true, logs });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function getProfileCookiesHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile) {
+    return reply.status(404).send({ success: false, error: 'Perfil não encontrado' });
+  }
+
+  const { automationService } = await import('../services/automation.service.js');
+  const cookies = await automationService.getCookies(profile.cdp_port || undefined, profile.chrome_data_path);
+  return reply.send({ success: true, data: cookies });
+}
+
+export async function setProfileCookiesHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: { cookies: any[] | string } }>,
+  reply: FastifyReply
+) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile) {
+    return reply.status(404).send({ success: false, error: 'Perfil não encontrado' });
+  }
+
+  let cookieList: any[] = [];
+  if (typeof req.body?.cookies === 'string') {
+    try {
+      cookieList = JSON.parse(req.body.cookies);
+    } catch {
+      return reply.status(400).send({ success: false, error: 'Formato de cookies inválido. Envie um JSON array válido.' });
+    }
+  } else if (Array.isArray(req.body?.cookies)) {
+    cookieList = req.body.cookies;
+  }
+
+  const { automationService } = await import('../services/automation.service.js');
+  const result = await automationService.setCookies(profile.cdp_port || undefined, cookieList, profile.chrome_data_path);
+  return reply.send({ success: true, count: result.count, message: `${result.count} cookies aplicados com sucesso.` });
+}
+
+export async function clearProfileCookiesHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile) {
+    return reply.status(404).send({ success: false, error: 'Perfil não encontrado' });
+  }
+
+  const { automationService } = await import('../services/automation.service.js');
+  await automationService.clearCookies(profile.cdp_port || undefined, profile.chrome_data_path);
+  return reply.send({ success: true, message: 'Cookies limpos com sucesso.' });
+}
+
+export async function clearProfileCacheHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile) {
+    return reply.status(404).send({ success: false, error: 'Perfil não encontrado' });
+  }
+
+  if (!profile.cdp_port) {
+    return reply.status(400).send({ success: false, error: 'Inicie o navegador para limpar o cache em tempo de execução via CDP.' });
+  }
+
+  const { automationService } = await import('../services/automation.service.js');
+  await automationService.clearCache(profile.cdp_port);
+  return reply.send({ success: true, message: 'Cache e storage limpos com sucesso.' });
 }

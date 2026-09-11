@@ -60,6 +60,34 @@ export const ProxiesPage: React.FC = () => {
     }
   };
 
+  const [quickInput, setQuickInput] = useState('');
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickMsg, setQuickMsg] = useState<string | null>(null);
+
+  const handleQuickImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickInput.trim()) return;
+    setQuickLoading(true);
+    setQuickMsg(null);
+    try {
+      const created = await api.createProxy({
+        name: '',
+        host: '',
+        port: 0,
+        type: 'http',
+        raw: quickInput.trim(),
+        test_now: true,
+      });
+      setQuickMsg(`Proxy cadastrado com sucesso! ${created.last_ip ? `IP: ${created.last_ip} (${created.latency_ms}ms)` : ''}`);
+      setQuickInput('');
+      await loadProxies();
+    } catch (err: any) {
+      setQuickMsg(`Erro ao importar: ${err.message}`);
+    } finally {
+      setQuickLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fadeIn space-y-8">
       {/* Header */}
@@ -86,9 +114,47 @@ export const ProxiesPage: React.FC = () => {
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/25 transition"
           >
             <Plus className="h-4 w-4" />
-            Cadastrar Proxy
+            Cadastrar Manualmente
           </button>
         </div>
+      </div>
+
+      {/* Quick Paste Proxy Banner */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-400" />
+            <h3 className="font-bold text-sm text-white">Importação Rápida de Proxy (Colar Linha Completa)</h3>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">
+            Formato: host:porta:usuario:senha
+          </span>
+        </div>
+
+        <form onSubmit={handleQuickImport} className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            value={quickInput}
+            onChange={(e) => setQuickInput(e.target.value)}
+            placeholder="Ex: residencial-us.ipbr.pro:9000:acc_lung2jdb-country-br-state-saopaulo:76c75eba-8b47..."
+            className="flex-1 px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition"
+          />
+          <button
+            type="submit"
+            disabled={quickLoading || !quickInput.trim()}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition disabled:opacity-50 shrink-0"
+          >
+            {quickLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            {quickLoading ? 'Testando e Salvando...' : 'Adicionar & Testar Agora'}
+          </button>
+        </form>
+
+        {quickMsg && (
+          <div className="text-xs font-medium text-emerald-400 flex items-center gap-1.5 pt-1">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {quickMsg}
+          </div>
+        )}
       </div>
 
       {/* Proxies Table */}
