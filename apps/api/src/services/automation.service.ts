@@ -1,4 +1,3 @@
-import { chromium } from 'playwright-core';
 import { dockerManager } from '../managers/docker.manager.js';
 
 export interface PageInfo {
@@ -9,9 +8,22 @@ export interface PageInfo {
 
 export class AutomationService {
   /**
+   * Helper to lazily load playwright-core so server never crashes on startup
+   */
+  private async getChromium() {
+    try {
+      const pw = await import('playwright-core');
+      return pw.chromium;
+    } catch (e: any) {
+      throw new Error(`Playwright indisponível neste ambiente: ${e.message}`);
+    }
+  }
+
+  /**
    * Connects to Chromium via CDP and lists all open pages
    */
   async listPages(cdpPort: number): Promise<PageInfo[]> {
+    const chromium = await this.getChromium();
     const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
     console.log(`[AutomationService] Connecting over CDP to ${endpoint}...`);
 
@@ -40,6 +52,7 @@ export class AutomationService {
    * Connects via CDP and navigates the active page to a target URL
    */
   async navigate(cdpPort: number, targetUrl: string): Promise<{ success: boolean; finalUrl: string; title: string }> {
+    const chromium = await this.getChromium();
     const endpoint = await dockerManager.getCdpTargetForPort(cdpPort);
     console.log(`[AutomationService] Navigating browser via CDP ${endpoint} to: ${targetUrl}`);
 
