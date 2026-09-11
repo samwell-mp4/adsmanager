@@ -64,12 +64,6 @@ async function start() {
       console.log('[API] Files in static directory:', fs.readdirSync(staticPath));
     }
 
-    // Serve static files from React frontend
-    await fastify.register(fastifyStatic, {
-      root: staticPath,
-      prefix: '/',
-    });
-
     // Explicit root route
     fastify.get('/', (request, reply) => {
       return (reply as any).sendFile('index.html');
@@ -87,6 +81,12 @@ async function start() {
       } catch (err: any) {
         return { success: false, error: err.message };
       }
+    });
+
+    // Serve static files from React frontend
+    await fastify.register(fastifyStatic, {
+      root: staticPath,
+      prefix: '/',
     });
 
     // Enable CORS for web frontend
