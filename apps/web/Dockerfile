@@ -1,17 +1,10 @@
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
 FROM nginx:alpine
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /usr/share/nginx/html
+
+# Support both root context and apps/web context
+COPY dist* ./
+COPY nginx*.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
