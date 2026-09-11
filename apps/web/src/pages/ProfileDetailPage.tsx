@@ -157,7 +157,7 @@ export const ProfileDetailPage: React.FC = () => {
 
   const isRunning = profile.status === 'running';
   const vncUrl = profile.novnc_port
-    ? `http://${window.location.hostname}:${profile.novnc_port}/vnc.html?autoconnect=true&resize=scale`
+    ? `${window.location.protocol}//${window.location.host}/vnc/${profile.novnc_port}/vnc.html?autoconnect=true&resize=scale`
     : null;
 
   return (

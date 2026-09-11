@@ -12,9 +12,12 @@ import { fileURLToPath } from 'url';
 import fastifyStatic from '@fastify/static';
 
 import { dockerManager } from './managers/docker.manager.js';
+import httpProxy from 'http-proxy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const proxy = httpProxy.createProxyServer({ ws: true });
 
 const fastify = Fastify({
   logger: {
@@ -27,6 +30,21 @@ const fastify = Fastify({
       },
     },
   },
+});
+
+// Proxy VNC Traffic
+fastify.all('/vnc/:port/*', async (request, reply) => {
+  const { port } = request.params as { port: string };
+  const target = `http://127.0.0.1:${port}`;
+  
+  // Strip the /vnc/:port prefix before proxying
+  request.raw.url = request.raw.url?.replace(`/vnc/${port}`, '') || '/';
+  
+  proxy.web(request.raw, reply.raw, { target }, (err) => {
+    reply.status(502).send({ success: false, error: 'VNC Proxy Error' });
+  });
+  
+  return reply; // Fastify expects return for manual replies
 });
 
 // Global error handler
@@ -115,18 +133,30 @@ async function start() {
       console.warn('[API] Warning: Database is not reachable at startup. API starting with degraded health.');
     }
 
-    // Check Docker and prepare image
+    // Check Docker and prepare image WITHOUT blocking startup
     console.log('[API] Checking Docker daemon connection...');
     const isDockerConnected = await dockerManager.ping();
     if (isDockerConnected) {
-      console.log('[API] Docker connected. Ensuring browser image is built...');
-      await dockerManager.ensureImageExists();
+      console.log('[API] Docker connected. Ensuring browser image is built in background...');
+      dockerManager.ensureImageExists().catch(err => {
+        console.error('[API] Background image build failed:', err.message);
+      });
     } else {
       console.warn('[API] Warning: Docker daemon is not reachable at startup. Profile creation will fail.');
     }
 
     await fastify.listen({ port: config.port, host: config.host });
     console.log(`[API] Remote Browser Manager API running at http://${config.host}:${config.port}`);
+
+    // Listen to upgrade events for websocket proxying (noVNC uses wss)
+    fastify.server.on('upgrade', (req, socket, head) => {
+      if (req.url && req.url.startsWith('/vnc/')) {
+        const port = req.url.split('/')[2];
+        req.url = req.url.replace(`/vnc/${port}`, '') || '/';
+        proxy.ws(req, socket, head, { target: `http://127.0.0.1:${port}` });
+      }
+    });
+
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
