@@ -53,12 +53,26 @@ fastify.setNotFoundHandler((request, reply) => {
   return (reply as any).sendFile('index.html');
 });
 
+import fs from 'fs';
+
 async function start() {
   try {
+    const staticPath = path.join(__dirname, '../../web/dist');
+    console.log('[API] Serving static files from:', staticPath);
+    console.log('[API] Does static directory exist?', fs.existsSync(staticPath));
+    if (fs.existsSync(staticPath)) {
+      console.log('[API] Files in static directory:', fs.readdirSync(staticPath));
+    }
+
     // Serve static files from React frontend
     await fastify.register(fastifyStatic, {
-      root: path.join(__dirname, '../../web/dist'),
+      root: staticPath,
       prefix: '/',
+    });
+
+    // Explicit root route
+    fastify.get('/', (request, reply) => {
+      return (reply as any).sendFile('index.html');
     });
 
     // Enable CORS for web frontend
