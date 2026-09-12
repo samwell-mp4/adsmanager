@@ -3,11 +3,69 @@ import { profileRepository } from '../repositories/profile.repository.js';
 import { dockerManager } from '../managers/docker.manager.js';
 import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
 
+export const DEFAULT_N8N_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager';
+export const DEFAULT_N8N_TEST_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook-test/adsmanager';
+
 export class CrmService {
+  /**
+   * Forwards webhook payload to n8n workflow
+   */
+  async forwardToN8n(payload: any, customUrl?: string): Promise<{ success: boolean; status?: number; response?: any; error?: string }> {
+    const targetUrl = customUrl || process.env.N8N_WEBHOOK_URL || DEFAULT_N8N_WEBHOOK;
+    console.log(`[CrmService] Forwarding payload (${payload.conversations?.length || 0} conversations) to n8n: ${targetUrl}`);
+
+    try {
+      const res = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      let resData: any = null;
+      try {
+        resData = await res.json();
+      } catch {
+        resData = await res.text();
+      }
+
+      if (res.ok) {
+        console.log(`[CrmService] n8n webhook SUCCESS [${res.status}]:`, resData);
+        return { success: true, status: res.status, response: resData };
+      }
+
+      // If production URL gives 404, check if test URL is active (common during n8n workflow creation)
+      if (res.status === 404 && targetUrl === DEFAULT_N8N_WEBHOOK) {
+        console.warn(`[CrmService] n8n production webhook returned 404. Attempting test webhook fallback: ${DEFAULT_N8N_TEST_WEBHOOK}...`);
+        try {
+          const testRes = await fetch(DEFAULT_N8N_TEST_WEBHOOK, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          let testData: any = null;
+          try { testData = await testRes.json(); } catch { testData = await testRes.text(); }
+
+          if (testRes.ok) {
+            console.log(`[CrmService] n8n test webhook SUCCESS [${testRes.status}]:`, testData);
+            return { success: true, status: testRes.status, response: testData };
+          }
+        } catch (testErr: any) {
+          console.warn(`[CrmService] Test webhook attempt:`, testErr.message);
+        }
+      }
+
+      console.warn(`[CrmService] n8n webhook returned status ${res.status}:`, resData);
+      return { success: false, status: res.status, response: resData, error: `n8n returned status ${res.status}` };
+    } catch (err: any) {
+      console.error(`[CrmService] Failed forwarding to n8n webhook:`, err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
   /**
    * Ingests webhook data sent from the Chrome Extension
    */
-  async processWebhook(payload: CrmWebhookPayload): Promise<{ success: boolean; synced_conversations: number; synced_messages: number }> {
+  async processWebhook(payload: CrmWebhookPayload): Promise<{ success: boolean; synced_conversations: number; synced_messages: number; n8n_forward?: any }> {
     let profileId = payload.profile_id || null;
 
     if (!profileId && payload.profile_uuid) {
@@ -19,7 +77,9 @@ export class CrmService {
     let syncedMsgs = 0;
 
     if (!payload.conversations || !Array.isArray(payload.conversations)) {
-      return { success: true, synced_conversations: 0, synced_messages: 0 };
+      // Still forward empty/test ping if received
+      const forwardRes = await this.forwardToN8n(payload);
+      return { success: true, synced_conversations: 0, synced_messages: 0, n8n_forward: forwardRes };
     }
 
     for (const convData of payload.conversations) {
@@ -60,7 +120,16 @@ export class CrmService {
     }
 
     console.log(`[CrmService] Processed webhook: ${syncedConvs} conversations, ${syncedMsgs} messages for profile #${profileId}`);
-    return { success: true, synced_conversations: syncedConvs, synced_messages: syncedMsgs };
+
+    // Asynchronously forward full data to n8n webhook so external workflows receive the event!
+    const n8nForward = await this.forwardToN8n({
+      ...payload,
+      profile_id: profileId,
+      synced_at: new Date().toISOString(),
+      stats: { synced_conversations: syncedConvs, synced_messages: syncedMsgs }
+    });
+
+    return { success: true, synced_conversations: syncedConvs, synced_messages: syncedMsgs, n8n_forward: n8nForward };
   }
 
   /**

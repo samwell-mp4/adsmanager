@@ -47,6 +47,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     'Pode me passar seu WhatsApp para acertarmos os detalhes?'
   ];
 
+  const [testingWebhook, setTestingWebhook] = useState(false);
+
   // Fetch conversation list
   const fetchConversations = async (silent = false) => {
     if (!silent) setLoadingList(true);
@@ -65,8 +67,54 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       }
     } catch (err: any) {
       console.error('Error fetching CRM conversations:', err);
+      // Auto-repair if database tables are missing!
+      if (err.message && (err.message.includes('relation') || err.message.includes('does not exist') || err.message.includes('500'))) {
+        console.log('[CRM View] Database tables missing. Triggering auto-initialization...');
+        try {
+          await api.initCrmTables();
+          const retryData = await api.getCrmConversations({
+            platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
+            profile_id: selectedProfileId !== 'all' ? selectedProfileId : undefined,
+            lead_status: selectedStatus !== 'all' ? selectedStatus : undefined,
+            search: searchTerm.trim() ? searchTerm.trim() : undefined,
+          });
+          setConversations(retryData || []);
+          if (!selectedId && retryData && retryData.length > 0) {
+            setSelectedId(retryData[0].id);
+          }
+        } catch (repairErr) {
+          console.warn('[CRM View] Auto-init fallback:', repairErr);
+        }
+      }
     } finally {
       if (!silent) setLoadingList(false);
+    }
+  };
+
+  // Test n8n Webhook forward
+  const handleTestN8nWebhook = async () => {
+    setTestingWebhook(true);
+    setFeedback(null);
+    try {
+      const res = await api.testCrmWebhook();
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: 'Webhook n8n disparado com sucesso! ' + (res.result?.status ? `(HTTP ${res.result.status})` : '')
+        });
+      } else {
+        const hint = res.result?.response?.hint || res.result?.error || 'Verifique se o workflow está ativo no n8n.';
+        setFeedback({
+          type: 'error',
+          message: 'Retorno do n8n: ' + hint
+        });
+      }
+      setTimeout(() => setFeedback(null), 6000);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Falha ao testar webhook: ' + err.message });
+      setTimeout(() => setFeedback(null), 6000);
+    } finally {
+      setTestingWebhook(false);
     }
   };
 
@@ -263,6 +311,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
           </button>
 
+          {/* Test n8n Webhook Button */}
+          <button
+            onClick={handleTestN8nWebhook}
+            disabled={testingWebhook}
+            className="px-3 py-1.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+            title="Disparar um evento de teste diretamente para o webhook do n8n (https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager)"
+          >
+            <span>📡</span>
+            <span className="hidden sm:inline">{testingWebhook ? 'Testando n8n...' : 'Testar Webhook n8n'}</span>
+          </button>
+
           {/* Download Extension Button */}
           <a
             href="/api/crm/extension/download"
@@ -275,6 +334,28 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           </a>
         </div>
       </div>
+
+      {/* Global Feedback Banner */}
+      {feedback && (
+        <div
+          className={`mx-6 mt-3 p-3 rounded-xl text-xs flex items-center justify-between gap-3 shadow-lg transition-all animate-fadeIn ${
+            feedback.type === 'success'
+              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+              : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /> : <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />}
+            <span className="font-medium">{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded hover:bg-white/10"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 3-Column Main Content */}
       <div className="flex-1 flex overflow-hidden">

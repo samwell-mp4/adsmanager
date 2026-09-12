@@ -159,3 +159,47 @@ export async function downloadExtensionHandler(
     return reply.status(500).send({ success: false, error: err.message });
   }
 }
+
+export async function initCrmTablesHandler(
+  _req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const { crmRepository } = await import('../repositories/crm.repository.js');
+    await crmRepository.ensureCrmTablesExist();
+    return reply.send({ success: true, message: 'Tabelas do CRM e índices inicializados com sucesso no banco de dados.' });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function testWebhookForwardHandler(
+  req: FastifyRequest<{ Body?: { target_url?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const customUrl = (req.body as any)?.target_url || (req.query as any)?.target_url;
+    const testPayload = {
+      test: true,
+      timestamp: new Date().toISOString(),
+      source: 'Ads Manager CRM Probe',
+      platform: 'facebook',
+      conversations: [
+        {
+          external_id: 'test_123456',
+          customer_name: 'Cliente Teste n8n',
+          product_title: 'Perfume Teste 25ml',
+          last_message: 'Mensagem de teste para verificar se o webhook do n8n está recebendo!',
+          last_message_at: new Date().toISOString(),
+          unread: true,
+        },
+      ],
+    };
+
+    const result = await crmService.forwardToN8n(testPayload, customUrl);
+    return reply.send({ success: result.success, result });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+

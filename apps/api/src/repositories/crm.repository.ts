@@ -1,7 +1,85 @@
 import { pool } from '../db/index.js';
 import { CrmConversation, CrmMessage, CrmOutgoingMessage, LeadStatus, CrmPlatform } from '../types/index.js';
 
+let tablesInitialized = false;
+
 export class CrmRepository {
+  /**
+   * Automatically ensures all CRM tables and indexes exist in the database
+   */
+  async ensureCrmTablesExist(): Promise<void> {
+    if (tablesInitialized) return;
+    const client = await pool.connect();
+    try {
+      await client.query(`
+        -- Tabela de conversas / leads do CRM
+        CREATE TABLE IF NOT EXISTS crm_conversations (
+            id SERIAL PRIMARY KEY,
+            profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+            platform VARCHAR(50) NOT NULL DEFAULT 'facebook',
+            external_id VARCHAR(255) NOT NULL,
+            customer_name VARCHAR(255) NOT NULL DEFAULT 'Cliente',
+            customer_avatar TEXT,
+            product_title TEXT,
+            product_price VARCHAR(100),
+            product_image TEXT,
+            product_url TEXT,
+            last_message TEXT,
+            last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            unread_count INTEGER NOT NULL DEFAULT 0,
+            lead_status VARCHAR(50) NOT NULL DEFAULT 'novo',
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- Tabela de mensagens individuais de cada conversa
+        CREATE TABLE IF NOT EXISTS crm_messages (
+            id SERIAL PRIMARY KEY,
+            conversation_id INTEGER NOT NULL REFERENCES crm_conversations(id) ON DELETE CASCADE,
+            sender_type VARCHAR(20) NOT NULL DEFAULT 'customer',
+            sender_name VARCHAR(255),
+            content TEXT NOT NULL,
+            external_id VARCHAR(255),
+            sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- Fila de respostas a serem enviadas pela extensão ou CDP
+        CREATE TABLE IF NOT EXISTS crm_outgoing_queue (
+            id SERIAL PRIMARY KEY,
+            conversation_id INTEGER NOT NULL REFERENCES crm_conversations(id) ON DELETE CASCADE,
+            profile_id INTEGER,
+            platform VARCHAR(50) NOT NULL,
+            external_id VARCHAR(255) NOT NULL,
+            message_text TEXT NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            sent_at TIMESTAMPTZ
+        );
+
+        -- Unique index supporting NULL profile_id safely
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_conv_plat_ext_prof
+        ON crm_conversations (platform, external_id, COALESCE(profile_id, 0));
+
+        -- Índices de performance
+        CREATE INDEX IF NOT EXISTS idx_crm_conv_platform ON crm_conversations(platform);
+        CREATE INDEX IF NOT EXISTS idx_crm_conv_profile ON crm_conversations(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_conv_updated ON crm_conversations(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_crm_msg_conv ON crm_messages(conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_queue_status ON crm_outgoing_queue(status, profile_id);
+      `);
+      tablesInitialized = true;
+      console.log('[CrmRepository] CRM database tables and indexes verified successfully.');
+    } catch (err: any) {
+      console.error('[CrmRepository] Notice verifying CRM tables:', err.message);
+    } finally {
+      client.release();
+    }
+  }
+
   /**
    * Upserts a conversation from webhook data
    */
@@ -19,6 +97,7 @@ export class CrmRepository {
     last_message_at?: Date | string | null;
     unread_count?: number;
   }): Promise<CrmConversation> {
+    await this.ensureCrmTablesExist();
     const client = await pool.connect();
     try {
       const query = `
@@ -29,7 +108,7 @@ export class CrmRepository {
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), COALESCE($12, 0), NOW()
         )
-        ON CONFLICT (platform, external_id, profile_id)
+        ON CONFLICT (platform, external_id, COALESCE(profile_id, 0))
         DO UPDATE SET
           customer_name = EXCLUDED.customer_name,
           customer_avatar = COALESCE(EXCLUDED.customer_avatar, crm_conversations.customer_avatar),
@@ -123,6 +202,7 @@ export class CrmRepository {
     limit?: number;
     offset?: number;
   }): Promise<CrmConversation[]> {
+    await this.ensureCrmTablesExist();
     const client = await pool.connect();
     try {
       let query = `
@@ -174,6 +254,7 @@ export class CrmRepository {
    * Gets conversation by ID
    */
   async getConversationById(id: number): Promise<CrmConversation | null> {
+    await this.ensureCrmTablesExist();
     const client = await pool.connect();
     try {
       const query = `

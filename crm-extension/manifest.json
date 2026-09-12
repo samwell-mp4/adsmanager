@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Ads Manager CRM Collector Pro",
+  "version": "1.4.0",
+  "description": "Sincronizador automático e manual de mensagens do Facebook Marketplace e OLX para o Ads Manager CRM e n8n Webhook",
+  "permissions": [
+    "tabs",
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://*.facebook.com/*",
+    "*://*.olx.com.br/*",
+    "https://*.easypanel.host/*",
+    "<all_urls>"
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon48.png"
+  },
+  "action": {
+    "default_title": "Ads Manager CRM Collector",
+    "default_popup": "popup.html",
+    "default_icon": "icon48.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.facebook.com/*",
+        "*://*.olx.com.br/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

@@ -297,4 +297,19 @@ export const api = {
     const json = await handleResponse<{ success: boolean; data: any }>(res);
     return json.data;
   },
+
+  async initCrmTables(): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/crm/init`);
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async testCrmWebhook(target_url?: string): Promise<{ success: boolean; result: any }> {
+    const res = await fetch(`${API_BASE}/crm/test-webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_url }),
+    });
+    return handleResponse<{ success: boolean; result: any }>(res);
+  },
 };
+

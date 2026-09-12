@@ -196,6 +196,15 @@ async function start() {
       } catch (migErr: any) {
         console.error('[API] Migration notice:', migErr.message);
       }
+
+      // Explicitly guarantee CRM tables and indexes exist
+      try {
+        const { crmRepository } = await import('./repositories/crm.repository.js');
+        await crmRepository.ensureCrmTablesExist();
+        console.log('[API] CRM omnichannel tables and indexes confirmed.');
+      } catch (crmTableErr: any) {
+        console.error('[API] Notice confirming CRM tables:', crmTableErr.message);
+      }
     } else {
       console.warn('[API] Warning: Database is not reachable at startup. API starting with degraded health.');
     }
