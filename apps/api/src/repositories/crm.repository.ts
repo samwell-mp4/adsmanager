@@ -15,7 +15,7 @@ export class CrmRepository {
         -- Tabela de conversas / leads do CRM
         CREATE TABLE IF NOT EXISTS crm_conversations (
             id SERIAL PRIMARY KEY,
-            profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+            profile_id INTEGER DEFAULT 0,
             platform VARCHAR(50) NOT NULL DEFAULT 'facebook',
             external_id VARCHAR(255) NOT NULL,
             customer_name VARCHAR(255) NOT NULL DEFAULT 'Cliente',
@@ -49,7 +49,7 @@ export class CrmRepository {
         CREATE TABLE IF NOT EXISTS crm_outgoing_queue (
             id SERIAL PRIMARY KEY,
             conversation_id INTEGER NOT NULL REFERENCES crm_conversations(id) ON DELETE CASCADE,
-            profile_id INTEGER,
+            profile_id INTEGER DEFAULT 0,
             platform VARCHAR(50) NOT NULL,
             external_id VARCHAR(255) NOT NULL,
             message_text TEXT NOT NULL,
@@ -60,9 +60,9 @@ export class CrmRepository {
             sent_at TIMESTAMPTZ
         );
 
-        -- Unique index supporting NULL profile_id safely
+        -- Unique index supporting profile_id safely
         CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_conv_plat_ext_prof
-        ON crm_conversations (platform, external_id, COALESCE(profile_id, 0));
+        ON crm_conversations (platform, external_id, profile_id);
 
         -- Índices de performance
         CREATE INDEX IF NOT EXISTS idx_crm_conv_platform ON crm_conversations(platform);
@@ -74,7 +74,8 @@ export class CrmRepository {
       tablesInitialized = true;
       console.log('[CrmRepository] CRM database tables and indexes verified successfully.');
     } catch (err: any) {
-      console.error('[CrmRepository] Notice verifying CRM tables:', err.message);
+      console.error('[CrmRepository] Error verifying CRM tables:', err.message);
+      throw err;
     } finally {
       client.release();
     }
@@ -106,9 +107,9 @@ export class CrmRepository {
           product_title, product_price, product_image, product_url,
           last_message, last_message_at, unread_count, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), COALESCE($12, 0), NOW()
+          COALESCE($1, 0), $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), COALESCE($12, 0), NOW()
         )
-        ON CONFLICT (platform, external_id, COALESCE(profile_id, 0))
+        ON CONFLICT (platform, external_id, profile_id)
         DO UPDATE SET
           customer_name = EXCLUDED.customer_name,
           customer_avatar = COALESCE(EXCLUDED.customer_avatar, crm_conversations.customer_avatar),
@@ -124,7 +125,7 @@ export class CrmRepository {
       `;
 
       const values = [
-        data.profile_id || null,
+        data.profile_id || 0,
         data.platform,
         data.external_id,
         data.customer_name || 'Cliente',
@@ -208,7 +209,7 @@ export class CrmRepository {
       let query = `
         SELECT c.*, p.name AS profile_name
         FROM crm_conversations c
-        LEFT JOIN profiles p ON p.id = c.profile_id
+        LEFT JOIN browser_profiles p ON p.id = c.profile_id
         WHERE 1=1
       `;
       const params: any[] = [];
@@ -260,7 +261,7 @@ export class CrmRepository {
       const query = `
         SELECT c.*, p.name AS profile_name
         FROM crm_conversations c
-        LEFT JOIN profiles p ON p.id = c.profile_id
+        LEFT JOIN browser_profiles p ON p.id = c.profile_id
         WHERE c.id = $1;
       `;
       const res = await client.query(query, [id]);

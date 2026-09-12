@@ -323,13 +323,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     msgArea.textContent = text;
   }
 
+  function sanitizeApiUrl(raw) {
+    if (!raw) return defaultApiUrl;
+    let u = raw.trim().replace(/\\/+$/, '');
+    u = u.replace(/\\/api\\/crm\\/webhook\\/?$/i, '');
+    u = u.replace(/\\/api\\/crm\\/conversations\\/?$/i, '');
+    u = u.replace(/\\/api\\/crm\\/?$/i, '');
+    u = u.replace(/\\/crm\\/?$/i, '');
+    u = u.replace(/\\/api\\/?$/i, '');
+    u = u.replace(/\\/+$/, '');
+    if (!u || u.includes('172.17.') || u.includes('localhost')) {
+      u = defaultApiUrl;
+    }
+    return u;
+  }
+
   // 1. Salvar configurações
   saveBtn.addEventListener('click', () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
-    if (!apiUrl || apiUrl.includes('172.17.') || apiUrl.includes('localhost')) {
-      apiUrl = defaultApiUrl;
-      apiUrlInput.value = apiUrl;
-    }
+    const apiUrl = sanitizeApiUrl(apiUrlInput.value);
+    apiUrlInput.value = apiUrl;
     const n8nWebhookUrl = n8nWebhookInput.value.trim() || defaultN8nUrl;
     const profileId = parseInt(profileIdInput.value, 10) || ${profileId};
 
@@ -413,7 +425,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. Testar Conexão com Servidor CRM
   testApiBtn.addEventListener('click', async () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '') || defaultApiUrl;
+    const apiUrl = sanitizeApiUrl(apiUrlInput.value);
+    apiUrlInput.value = apiUrl;
     setStatus('🔌 Testando servidor: ' + apiUrl + '...', '#38bdf8');
 
     try {
@@ -440,17 +453,39 @@ let currentProfileUuid = ${JSON.stringify(profileUuid)};
 let currentApiUrl = defaultAdsManagerUrl;
 let currentN8nUrl = defaultN8nWebhookUrl;
 
+function sanitizeApiUrl(raw) {
+  if (!raw) return defaultAdsManagerUrl;
+  let u = raw.trim().replace(/\\/+$/, '');
+  u = u.replace(/\\/api\\/crm\\/webhook\\/?$/i, '');
+  u = u.replace(/\\/api\\/crm\\/conversations\\/?$/i, '');
+  u = u.replace(/\\/api\\/crm\\/?$/i, '');
+  u = u.replace(/\\/crm\\/?$/i, '');
+  u = u.replace(/\\/api\\/?$/i, '');
+  u = u.replace(/\\/+$/, '');
+  if (!u || u.includes('172.17.') || u.includes('localhost')) {
+    u = defaultAdsManagerUrl;
+  }
+  return u;
+}
+
 // Load stored settings
 chrome.storage.local.get(['apiUrl', 'n8nWebhookUrl', 'profileId', 'profileUuid'], (res) => {
-  if (res.apiUrl && !res.apiUrl.includes('172.17.') && !res.apiUrl.includes('localhost')) {
-    currentApiUrl = res.apiUrl.replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
-  }
-  if (res.n8nWebhookUrl) {
-    currentN8nUrl = res.n8nWebhookUrl;
-  }
+  if (res.apiUrl) currentApiUrl = sanitizeApiUrl(res.apiUrl);
+  if (res.n8nWebhookUrl) currentN8nUrl = res.n8nWebhookUrl;
   if (res.profileId) currentProfileId = res.profileId;
   if (res.profileUuid) currentProfileUuid = res.profileUuid;
   console.log('[CRM Background] Initialized. Target API:', currentApiUrl, '| n8n Webhook:', currentN8nUrl);
+});
+
+// React immediately to settings changed in popup
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local') {
+    if (changes.apiUrl) currentApiUrl = sanitizeApiUrl(changes.apiUrl.newValue);
+    if (changes.n8nWebhookUrl) currentN8nUrl = changes.n8nWebhookUrl.newValue || defaultN8nWebhookUrl;
+    if (changes.profileId) currentProfileId = changes.profileId.newValue || ${profileId};
+    if (changes.profileUuid) currentProfileUuid = changes.profileUuid.newValue || ${JSON.stringify(profileUuid)};
+    console.log('[CRM Background] Settings updated live. Target API:', currentApiUrl, '| n8n Webhook:', currentN8nUrl);
+  }
 });
 
 // Forward to n8n webhook directly from extension

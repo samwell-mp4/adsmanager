@@ -2,7 +2,7 @@
 -- Tabela de conversas / leads do CRM
 CREATE TABLE IF NOT EXISTS crm_conversations (
     id SERIAL PRIMARY KEY,
-    profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
+    profile_id INTEGER NOT NULL DEFAULT 0,
     platform VARCHAR(50) NOT NULL DEFAULT 'facebook', -- 'facebook', 'olx', 'whatsapp'
     external_id VARCHAR(255) NOT NULL, -- ID único da conversa na plataforma (ex: thread ID do Facebook)
     customer_name VARCHAR(255) NOT NULL DEFAULT 'Cliente',
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS crm_messages (
 CREATE TABLE IF NOT EXISTS crm_outgoing_queue (
     id SERIAL PRIMARY KEY,
     conversation_id INTEGER NOT NULL REFERENCES crm_conversations(id) ON DELETE CASCADE,
-    profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+    profile_id INTEGER NOT NULL DEFAULT 0,
     platform VARCHAR(50) NOT NULL,
     external_id VARCHAR(255) NOT NULL,
     message_text TEXT NOT NULL,

@@ -36,13 +36,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     msgArea.textContent = text;
   }
 
+  function sanitizeApiUrl(raw) {
+    if (!raw) return defaultApiUrl;
+    let u = raw.trim().replace(/\/+$/, '');
+    u = u.replace(/\/api\/crm\/webhook\/?$/i, '');
+    u = u.replace(/\/api\/crm\/conversations\/?$/i, '');
+    u = u.replace(/\/api\/crm\/?$/i, '');
+    u = u.replace(/\/crm\/?$/i, '');
+    u = u.replace(/\/api\/?$/i, '');
+    u = u.replace(/\/+$/, '');
+    if (!u || u.includes('172.17.') || u.includes('localhost')) {
+      u = defaultApiUrl;
+    }
+    return u;
+  }
+
   // 1. Salvar configurações
   saveBtn.addEventListener('click', () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\/+$/, '').replace(/\/crm\/?$/i, '').replace(/\/api\/?$/i, '');
-    if (!apiUrl || apiUrl.includes('172.17.') || apiUrl.includes('localhost')) {
-      apiUrl = defaultApiUrl;
-      apiUrlInput.value = apiUrl;
-    }
+    const apiUrl = sanitizeApiUrl(apiUrlInput.value);
+    apiUrlInput.value = apiUrl;
     const n8nWebhookUrl = n8nWebhookInput.value.trim() || defaultN8nUrl;
     const profileId = parseInt(profileIdInput.value, 10) || 1;
 
@@ -126,7 +138,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 4. Testar Conexão com Servidor CRM
   testApiBtn.addEventListener('click', async () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\/+$/, '').replace(/\/crm\/?$/i, '').replace(/\/api\/?$/i, '') || defaultApiUrl;
+    const apiUrl = sanitizeApiUrl(apiUrlInput.value);
+    apiUrlInput.value = apiUrl;
     setStatus('🔌 Testando servidor: ' + apiUrl + '...', '#38bdf8');
 
     try {
