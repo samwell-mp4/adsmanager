@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   saveBtn.addEventListener('click', () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '');
+    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
     if (!apiUrl || apiUrl.includes('172.17.') || apiUrl.includes('172.18.') || apiUrl.includes('localhost')) {
       apiUrl = defaultPublicUrl;
       apiUrlInput.value = apiUrl;
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   testBtn.addEventListener('click', async () => {
-    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '') || defaultPublicUrl;
+    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '') || defaultPublicUrl;
     msgArea.style.color = '#38bdf8';
     msgArea.textContent = 'Testando conexão com o servidor...';
 
@@ -301,15 +301,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 const defaultPublicUrl = 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host';
 let currentProfileId = ${profileId};
 let currentProfileUuid = ${JSON.stringify(profileUuid)};
-let currentApiUrl = ${JSON.stringify(apiBaseUrl)} || defaultPublicUrl;
+let currentApiUrl = (${JSON.stringify(apiBaseUrl)} || defaultPublicUrl).replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
 
 if (!currentApiUrl || currentApiUrl.includes('172.17.') || currentApiUrl.includes('172.18.') || currentApiUrl.includes('localhost')) {
   currentApiUrl = defaultPublicUrl;
 }
 
 chrome.storage.local.get(['apiUrl', 'profileId', 'profileUuid'], (res) => {
-  if (res.apiUrl && !res.apiUrl.includes('172.17.') && !res.apiUrl.includes('172.18.') && !res.apiUrl.includes('localhost')) {
-    currentApiUrl = res.apiUrl;
+  let stored = (res.apiUrl || '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
+  if (stored && !stored.includes('172.17.') && !stored.includes('172.18.') && !stored.includes('localhost')) {
+    currentApiUrl = stored;
   } else {
     currentApiUrl = defaultPublicUrl;
     chrome.storage.local.set({ apiUrl: defaultPublicUrl });
@@ -330,9 +331,10 @@ async function sendWithFallback(endpoint, options = {}) {
   const uniqueCandidates = Array.from(new Set(candidates));
   let lastErr = null;
 
-  for (const base of uniqueCandidates) {
+  for (const rawBase of uniqueCandidates) {
     try {
-      const fullUrl = base.replace(/\\/+$/, '') + endpoint;
+      const base = rawBase.replace(/\\/+$/, '').replace(/\\/crm\\/?$/i, '').replace(/\\/api\\/?$/i, '');
+      const fullUrl = base + endpoint;
       const res = await fetch(fullUrl, options);
       if (res.ok) {
         if (currentApiUrl !== base) {
@@ -343,7 +345,7 @@ async function sendWithFallback(endpoint, options = {}) {
       }
     } catch (e) {
       lastErr = e;
-      console.warn('[CRM Background] Attempt failed for ' + base + ':', e.message);
+      console.warn('[CRM Background] Attempt failed for ' + rawBase + ':', e.message);
     }
   }
 
