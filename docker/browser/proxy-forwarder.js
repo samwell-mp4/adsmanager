@@ -22,6 +22,13 @@ if (!PROXY_HOST) {
   process.exit(0);
 }
 
+process.on('uncaughtException', (err) => {
+  console.error('[proxy-forwarder] Uncaught exception:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[proxy-forwarder] Unhandled rejection:', reason);
+});
+
 console.log(`[proxy-forwarder] Starting local forwarder -> ${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}`);
 
 const authHeader = PROXY_USER ? 'Basic ' + Buffer.from(`${PROXY_USER}:${PROXY_PASS}`).toString('base64') : null;

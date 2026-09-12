@@ -39,18 +39,18 @@ websockify --web /usr/share/novnc/ 6080 localhost:5900 > /tmp/runtime/novnc.log 
 NOVNC_PID=$!
 sleep 1
 
-# 5. Local Proxy Handler (if upstream proxy configured)
+# 5. Proxy Configuration
 CHROME_PROXY_ARGS=""
 if [ -n "$PROXY_HOST" ]; then
-    if [ -n "$PROXY_USER" ] || [ "$PROXY_TYPE" = "socks5" ] || [ "$PROXY_TYPE" = "socks4" ]; then
-        echo "[browser-container] Starting local proxy bridge for authenticated/socks proxy..."
+    if [ "$PROXY_TYPE" = "socks5" ] && [ -n "$PROXY_USER" ]; then
+        echo "[browser-container] Starting local proxy bridge for authenticated SOCKS5 proxy..."
         LOCAL_PROXY_PORT=8888 node /usr/local/bin/proxy-forwarder.js > /tmp/runtime/proxy.log 2>&1 &
         PROXY_PID=$!
         sleep 1
-        CHROME_PROXY_ARGS="--proxy-server=http://127.0.0.1:8888 --proxy-bypass-list=<-loopback>;localhost;127.0.0.1;::1 --disable-quic"
+        CHROME_PROXY_ARGS="--proxy-server=http://127.0.0.1:8888 --proxy-bypass-list=localhost;127.0.0.1;::1 --disable-quic"
     else
-        echo "[browser-container] Using direct unauthenticated proxy -> ${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
-        CHROME_PROXY_ARGS="--proxy-server=${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT} --proxy-bypass-list=<-loopback>;localhost;127.0.0.1;::1 --disable-quic"
+        echo "[browser-container] Using native proxy -> ${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT}"
+        CHROME_PROXY_ARGS="--proxy-server=${PROXY_TYPE}://${PROXY_HOST}:${PROXY_PORT} --proxy-bypass-list=localhost;127.0.0.1;::1 --disable-quic"
     fi
 fi
 
@@ -94,52 +94,44 @@ if [ -n "$CUSTOM_EXTS" ]; then
     LOAD_EXT_FLAG="--load-extension=$CUSTOM_EXTS"
 fi
 
-# 7. Start Google Chrome Stable with Anti-Detect Stealth Flags
-echo "[browser-container] Starting Google Chrome with stealth flags on port 9222..."
-google-chrome-stable \
-    --no-sandbox \
-    --test-type \
-    --disable-dev-shm-usage \
-    --disable-gpu \
-    --enable-webgl \
-    --disable-blink-features=AutomationControlled \
-    --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
-    --enforce-webrtc-ip-permission-check \
-    --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
-    --password-store=basic \
-    --use-mock-keychain \
-    --disable-default-apps \
-    --disable-sync \
-    --disable-translate \
-    --window-size=${SCREEN_WIDTH},${SCREEN_HEIGHT} \
-    --start-maximized \
-    --user-data-dir=/home/browser/profile \
-    --remote-debugging-port=9222 \
-    --remote-debugging-address=0.0.0.0 \
-    --no-first-run \
-    --no-default-browser-check \
-    --lang=${LOCALE} \
-    ${LOAD_EXT_FLAG} \
-    ${CHROME_PROXY_ARGS} \
-    "about:blank" &
+# 7. Start Google Chrome Stable with Supervision Loop (prevents container shutdown on Chrome crash or SingletonLock)
+while true; do
+    # Remove stale lock files from previous runs to prevent Chrome from exiting immediately
+    rm -rf /home/browser/profile/Singleton* 2>/dev/null || true
+    rm -rf /home/browser/profile/*Lock* 2>/dev/null || true
 
-CHROME_PID=$!
+    echo "[browser-container] Starting Google Chrome with stealth flags on port 9222..."
+    google-chrome-stable \
+        --no-sandbox \
+        --test-type \
+        --disable-dev-shm-usage \
+        --disable-gpu \
+        --enable-webgl \
+        --disable-blink-features=AutomationControlled \
+        --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+        --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+        --password-store=basic \
+        --use-mock-keychain \
+        --disable-default-apps \
+        --disable-sync \
+        --disable-translate \
+        --window-size=${SCREEN_WIDTH},${SCREEN_HEIGHT} \
+        --start-maximized \
+        --user-data-dir=/home/browser/profile \
+        --remote-debugging-port=9222 \
+        --remote-debugging-address=0.0.0.0 \
+        --no-first-run \
+        --no-default-browser-check \
+        --lang=${LOCALE} \
+        ${LOAD_EXT_FLAG} \
+        ${CHROME_PROXY_ARGS} \
+        "about:blank" &
 
-# Wait for Chrome to exit or monitor
-wait $CHROME_PID
-CHROME_EXIT=$?
-echo "[browser-container] Chrome exited with code: $CHROME_EXIT"
+    CHROME_PID=$!
 
-# Print logs for diagnostics if Chrome crashed
-if [ "$CHROME_EXIT" -ne 0 ]; then
-    echo "=== /tmp/runtime/proxy.log ==="
-    cat /tmp/runtime/proxy.log 2>/dev/null || true
-    echo "=== /tmp/runtime/xvfb.log ==="
-    cat /tmp/runtime/xvfb.log 2>/dev/null || true
-    echo "=== /tmp/runtime/x11vnc.log ==="
-    cat /tmp/runtime/x11vnc.log 2>/dev/null || true
-    echo "=== /tmp/runtime/novnc.log ==="
-    cat /tmp/runtime/novnc.log 2>/dev/null || true
-fi
-
-cleanup
+    # Wait for Chrome to exit or monitor
+    wait $CHROME_PID
+    CHROME_EXIT=$?
+    echo "[browser-container] Chrome exited with code: $CHROME_EXIT. Supervising restart in 2s..."
+    sleep 2
+done
