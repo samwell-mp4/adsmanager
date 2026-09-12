@@ -448,8 +448,8 @@ rm -f /tmp/injected_${extFolderName}.zip
    */
   async injectOfficialCrmExtension(containerName: string, profileId: number, profileUuid: string): Promise<boolean> {
     try {
-      const hostIp = await this.getHostGatewayIp();
-      const apiBaseUrl = `http://${hostIp}:${config.port}`;
+      const { activePublicUrl } = await import('../server.js');
+      const apiBaseUrl = activePublicUrl || config.publicUrl || 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host';
       const files = generateCrmExtensionFiles({
         profileId,
         profileUuid,

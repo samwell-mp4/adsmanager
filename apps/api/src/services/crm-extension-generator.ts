@@ -199,16 +199,17 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
 
   <div class="field">
     <label class="label">ID do Perfil de Navegador:</label>
-    <input type="number" id="profileIdInput" value="1">
+    <input type="number" id="profileIdInput" value="${profileId}">
   </div>
 
   <button id="saveBtn">💾 Salvar Configurações</button>
-  <button id="syncNowBtn" style="background: #334155;">🔄 Forçar Varredura Agora</button>
+  <button id="testBtn" style="background: #0284c7; margin-top: 6px;">🔌 Testar Conexão com Servidor</button>
+  <button id="syncNowBtn" style="background: #334155; margin-top: 6px;">🔄 Forçar Varredura Agora</button>
 
   <div class="status-msg" id="msgArea"></div>
 
   <div class="footer">
-    Ads Manager Multi-login Pro • v1.2.1
+    Ads Manager Multi-login Pro • v1.3.0
   </div>
 
   <script src="popup.js"></script>
@@ -220,28 +221,63 @@ document.addEventListener('DOMContentLoaded', async () => {
   const apiUrlInput = document.getElementById('apiUrlInput');
   const profileIdInput = document.getElementById('profileIdInput');
   const saveBtn = document.getElementById('saveBtn');
+  const testBtn = document.getElementById('testBtn');
   const syncNowBtn = document.getElementById('syncNowBtn');
   const msgArea = document.getElementById('msgArea');
 
+  const defaultPublicUrl = 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host';
+  const configuredUrl = ${JSON.stringify(apiBaseUrl)} || defaultPublicUrl;
+
   chrome.storage.local.get(['apiUrl', 'profileId'], (res) => {
-    apiUrlInput.value = res.apiUrl || ${JSON.stringify(apiBaseUrl)} || location.origin;
+    let url = res.apiUrl || configuredUrl;
+    // Auto-fix any internal 172.17.x or localhost URLs to public URL
+    if (!url || url.includes('172.17.') || url.includes('172.18.') || url.includes('localhost')) {
+      url = defaultPublicUrl;
+      chrome.storage.local.set({ apiUrl: url });
+    }
+    apiUrlInput.value = url;
     profileIdInput.value = res.profileId || ${profileId};
   });
 
   saveBtn.addEventListener('click', () => {
-    const apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '');
-    const profileId = parseInt(profileIdInput.value, 10) || 1;
+    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '');
+    if (!apiUrl || apiUrl.includes('172.17.') || apiUrl.includes('172.18.') || apiUrl.includes('localhost')) {
+      apiUrl = defaultPublicUrl;
+      apiUrlInput.value = apiUrl;
+    }
+    const profileId = parseInt(profileIdInput.value, 10) || ${profileId};
 
     chrome.storage.local.set({ apiUrl, profileId }, () => {
       msgArea.style.color = '#34d399';
-      msgArea.textContent = 'Configurações salvas!';
+      msgArea.textContent = 'Configurações salvas com sucesso!';
       setTimeout(() => msgArea.textContent = '', 3000);
     });
   });
 
+  testBtn.addEventListener('click', async () => {
+    let apiUrl = apiUrlInput.value.trim().replace(/\\/+$/, '') || defaultPublicUrl;
+    msgArea.style.color = '#38bdf8';
+    msgArea.textContent = 'Testando conexão com o servidor...';
+
+    try {
+      const res = await fetch(apiUrl + '/api/crm/outgoing?profile_id=' + (profileIdInput.value || 1));
+      if (res.ok) {
+        msgArea.style.color = '#34d399';
+        msgArea.textContent = '✅ Conexão OK! Servidor respondendo.';
+      } else {
+        msgArea.style.color = '#f87171';
+        msgArea.textContent = '❌ Servidor respondeu com erro ' + res.status;
+      }
+    } catch (err) {
+      msgArea.style.color = '#f87171';
+      msgArea.textContent = '❌ Erro de rede: ' + err.message;
+    }
+    setTimeout(() => msgArea.textContent = '', 4000);
+  });
+
   syncNowBtn.addEventListener('click', () => {
     msgArea.style.color = '#38bdf8';
-    msgArea.textContent = 'Disparando varredura...';
+    msgArea.textContent = 'Disparando varredura no Facebook/OLX...';
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs[0]) {
@@ -251,7 +287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             msgArea.textContent = 'Varredura realizada com sucesso!';
           } else {
             msgArea.style.color = '#f87171';
-            msgArea.textContent = 'Abra uma página do Facebook ou OLX.';
+            msgArea.textContent = 'Abra uma aba do Facebook ou OLX.';
           }
           setTimeout(() => msgArea.textContent = '', 4000);
         });
@@ -262,17 +298,57 @@ document.addEventListener('DOMContentLoaded', async () => {
 `;
 
   const backgroundJs = `
+const defaultPublicUrl = 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host';
 let currentProfileId = ${profileId};
 let currentProfileUuid = ${JSON.stringify(profileUuid)};
-let currentApiUrl = ${JSON.stringify(apiBaseUrl)};
+let currentApiUrl = ${JSON.stringify(apiBaseUrl)} || defaultPublicUrl;
+
+if (!currentApiUrl || currentApiUrl.includes('172.17.') || currentApiUrl.includes('172.18.') || currentApiUrl.includes('localhost')) {
+  currentApiUrl = defaultPublicUrl;
+}
 
 chrome.storage.local.get(['apiUrl', 'profileId', 'profileUuid'], (res) => {
-  if (res.apiUrl) currentApiUrl = res.apiUrl;
+  if (res.apiUrl && !res.apiUrl.includes('172.17.') && !res.apiUrl.includes('172.18.') && !res.apiUrl.includes('localhost')) {
+    currentApiUrl = res.apiUrl;
+  } else {
+    currentApiUrl = defaultPublicUrl;
+    chrome.storage.local.set({ apiUrl: defaultPublicUrl });
+  }
   if (res.profileId) currentProfileId = res.profileId;
   if (res.profileUuid) currentProfileUuid = res.profileUuid;
 });
 
 console.log('[CRM Background] Service initialized. Profile #' + currentProfileId + ' Target: ' + currentApiUrl);
+
+// Send HTTP requests with automatic fallback to public server URL
+async function sendWithFallback(endpoint, options = {}) {
+  const candidates = [
+    currentApiUrl,
+    defaultPublicUrl
+  ].filter(u => u && !u.includes('172.17.') && !u.includes('172.18.') && !u.includes('localhost'));
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  let lastErr = null;
+
+  for (const base of uniqueCandidates) {
+    try {
+      const fullUrl = base.replace(/\\/+$/, '') + endpoint;
+      const res = await fetch(fullUrl, options);
+      if (res.ok) {
+        if (currentApiUrl !== base) {
+          currentApiUrl = base;
+          chrome.storage.local.set({ apiUrl: base });
+        }
+        return await res.json();
+      }
+    } catch (e) {
+      lastErr = e;
+      console.warn('[CRM Background] Attempt failed for ' + base + ':', e.message);
+    }
+  }
+
+  throw lastErr || new Error('Todas as URLs de conexão falharam');
+}
 
 // Listen to scraped chat data from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -284,20 +360,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       conversations: message.conversations || []
     };
 
-    const targetUrl = (currentApiUrl || '') + '/api/crm/webhook';
+    console.log('[CRM Background] Dispatching ' + (payload.conversations ? payload.conversations.length : 0) + ' conversations to webhook...');
 
-    fetch(targetUrl, {
+    sendWithFallback('/api/crm/webhook', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
-    .then(r => r.json())
     .then(data => {
-      console.log('[CRM Background] Webhook sync OK:', data);
+      console.log('[CRM Background] Webhook sync SUCCESS:', data);
       sendResponse({ success: true, data });
     })
     .catch(err => {
-      console.warn('[CRM Background] Webhook sync failed:', err.message);
+      console.warn('[CRM Background] Webhook sync FAILED:', err.message);
       sendResponse({ success: false, error: err.message });
     });
 
@@ -307,13 +382,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Poll outgoing replies queue from dashboard
 async function pollOutgoingQueue() {
-  if (!currentApiUrl) return;
-
   try {
-    const res = await fetch(currentApiUrl + '/api/crm/outgoing?profile_id=' + currentProfileId);
-    if (!res.ok) return;
-    const json = await res.json();
-    const pendingReplies = json.data || [];
+    const json = await sendWithFallback('/api/crm/outgoing?profile_id=' + currentProfileId);
+    const pendingReplies = json ? (json.data || []) : [];
 
     if (pendingReplies.length > 0) {
       console.log('[CRM Background] ' + pendingReplies.length + ' replies pending dispatch.');
@@ -331,7 +402,7 @@ async function pollOutgoingQueue() {
           }, (response) => {
             if (response && response.success) {
               console.log('[CRM Background] Reply #' + reply.id + ' dispatched.');
-              fetch(currentApiUrl + '/api/crm/outgoing/' + reply.id + '/sent', { method: 'POST' }).catch(() => {});
+              sendWithFallback('/api/crm/outgoing/' + reply.id + '/sent', { method: 'POST' }).catch(() => {});
             }
           });
         }
@@ -513,18 +584,32 @@ function scrapeFacebook() {
     }
 
     const headerEl = document.querySelector('h2, [role="main"] h1, div[role="main"] span[dir="auto"]');
-    if (headerEl && !activeConv.product_title) {
-      const title = headerEl.textContent.trim();
-      if (title.length > 3 && title.length < 150) {
-        activeConv.product_title = title;
+    if (headerEl) {
+      const fullHeader = headerEl.textContent.trim();
+      if (fullHeader.includes(' - ')) {
+        const parts = fullHeader.split(' - ');
+        activeConv.customer_name = parts[0].trim();
+        activeConv.product_title = parts.slice(1).join(' - ').trim();
+      } else if (!activeConv.product_title && fullHeader.length > 3 && fullHeader.length < 150) {
+        activeConv.product_title = fullHeader;
       }
+    }
+
+    // Also look for Marketplace item details bar
+    const priceEl = document.querySelector('[role="main"] span');
+    if (priceEl && !activeConv.product_price) {
+      const pText = priceEl.textContent.trim();
+      if (pText.startsWith('R$')) activeConv.product_price = pText;
     }
 
     // Scrape message rows
     const messageRows = Array.from(document.querySelectorAll('[role="row"], div[dir="auto"]'))
       .filter(el => {
         const t = el.textContent.trim();
-        return t.length > 0 && t.length < 2500 && !t.includes('Marketplace') && !el.closest('a[href*="/messages/t/"]');
+        return t.length > 0 && 
+               t.length < 2500 && 
+               !t.includes('Marketplace') && 
+               !el.closest('a[href*="/messages/t/"]');
       });
 
     const parsedMessages = [];
@@ -533,26 +618,37 @@ function scrapeFacebook() {
     for (const el of messageRows) {
       const text = el.textContent.trim();
       if (seenMsg.has(text) || text.length === 0) continue;
+      // Skip action buttons or marketplace notices
+      if (text === 'Mark as sold' || text === 'More options' || text.startsWith('Classificar ') || text.startsWith('Já se podem classificar')) {
+        continue;
+      }
       seenMsg.add(text);
 
       let isMe = false;
       
       // Check aria-labels first
       const rowContainer = el.closest('[role="row"]') || el.parentElement;
-      const ariaLabel = rowContainer?.getAttribute('aria-label') || '';
-      if (ariaLabel.toLowerCase().includes('você enviou') || ariaLabel.toLowerCase().includes('you sent')) {
+      const ariaLabel = (rowContainer?.getAttribute('aria-label') || el.getAttribute('aria-label') || '').toLowerCase();
+      if (ariaLabel.includes('você enviou') || ariaLabel.includes('you sent') || ariaLabel.includes('sua mensagem')) {
         isMe = true;
       } else {
         // Fallback to bubble background color
         let p = el;
         for (let i = 0; i < 5 && p; i++) {
           const style = window.getComputedStyle(p);
-          const bg = style.backgroundColor;
-          if (bg.includes('0, 132, 255') || bg.includes('10, 128, 236') || bg.includes('0, 100, 224') || bg.includes('37, 99, 235')) {
+          const bg = style.backgroundColor || '';
+          if (bg.includes('0, 132, 255') || bg.includes('10, 128, 236') || bg.includes('0, 100, 224') || bg.includes('37, 99, 235') || bg.includes('147, 51, 234') || bg.includes('168, 85, 247') || bg.includes('112, 0, 255')) {
             isMe = true;
             break;
           }
           p = p.parentElement;
+        }
+        // Fallback to right alignment
+        if (!isMe && rowContainer) {
+          const rect = rowContainer.getBoundingClientRect();
+          if (rect.right > window.innerWidth * 0.60) {
+            isMe = true;
+          }
         }
       }
 
@@ -563,17 +659,24 @@ function scrapeFacebook() {
       });
     }
 
-    activeConv.messages = parsedMessages.slice(-25);
+    activeConv.messages = parsedMessages.slice(-30);
     if (activeConv.messages.length > 0) {
       activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
     }
   }
 
   if (conversations.length > 0) {
+    console.log('[CRM Content] Dispatching ' + conversations.length + ' conversations to background...');
     chrome.runtime.sendMessage({
       type: 'CRM_SYNC_DATA',
       platform: 'facebook',
       conversations: conversations
+    }, (res) => {
+      const statusEl = document.getElementById('crm-badge-status');
+      if (statusEl && res && res.success) {
+        statusEl.textContent = '(Sincronizado!)';
+        setTimeout(() => { if (statusEl) statusEl.textContent = '(Ativo)'; }, 2500);
+      }
     });
   }
 }

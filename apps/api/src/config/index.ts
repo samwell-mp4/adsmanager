@@ -31,5 +31,5 @@ export const config = {
     memoryMb: parseInt(process.env.PROFILE_MEMORY_MB || '2048', 10),
     cpuLimit: parseFloat(process.env.PROFILE_CPU_LIMIT || '2.0'),
   },
-  publicUrl: process.env.PUBLIC_URL || 'http://localhost:3001',
+  publicUrl: process.env.PUBLIC_URL || 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host',
 };

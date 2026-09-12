@@ -49,9 +49,16 @@ fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, bo
   }
 });
 
+export let activePublicUrl: string = process.env.PUBLIC_URL || 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host';
+
 // Log every incoming request immediately so it is 100% visible in Easypanel logs
 fastify.addHook('onRequest', async (request) => {
-  console.log(`[HTTP INCOMING] ${request.method} ${request.url} from ${request.ip}`);
+  const host = (request.headers['x-forwarded-host'] || request.headers.host) as string;
+  const proto = (request.headers['x-forwarded-proto'] || 'https') as string;
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1') && !host.startsWith('172.')) {
+    activePublicUrl = `${proto}://${host}`;
+  }
+  console.log(`[HTTP INCOMING] ${request.method} ${request.url} from ${request.ip} (host: ${host})`);
 });
 
 // Proxy VNC HTTP Traffic

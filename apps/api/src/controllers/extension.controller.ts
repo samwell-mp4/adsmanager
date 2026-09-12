@@ -104,9 +104,12 @@ export async function downloadOfficialExtensionHandler(
     profile = await profileRepository.findById(id);
   }
 
-  const proto = req.headers['x-forwarded-proto'] || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001';
-  const apiBaseUrl = `${proto}://${host}`;
+  const { activePublicUrl } = await import('../server.js');
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = (req.headers['x-forwarded-host'] || req.headers.host) as string;
+  const apiBaseUrl = (host && !host.startsWith('172.') && !host.includes('localhost'))
+    ? `${proto}://${host}`
+    : (activePublicUrl || config.publicUrl || 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host');
 
   const files = generateCrmExtensionFiles({
     profileId: profile?.id || 1,
@@ -164,9 +167,12 @@ export async function installOfficialExtensionHandler(
       fs.mkdirSync(crmExtDir, { recursive: true, mode: 0o777 });
     }
 
-    const proto = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001';
-    const apiBaseUrl = `${proto}://${host}`;
+    const { activePublicUrl } = await import('../server.js');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = (req.headers['x-forwarded-host'] || req.headers.host) as string;
+    const apiBaseUrl = (host && !host.startsWith('172.') && !host.includes('localhost'))
+      ? `${proto}://${host}`
+      : (activePublicUrl || config.publicUrl || 'https://adsmanager-adsmanagerapp.ahzgvk.easypanel.host');
 
     const files = generateCrmExtensionFiles({
       profileId: profile.id,
