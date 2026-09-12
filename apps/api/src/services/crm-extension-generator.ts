@@ -13,23 +13,27 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
   const apiBaseUrl = options.apiBaseUrl || '';
 
   const manifest = {
-    manifest_version: 2,
+    manifest_version: 3,
     name: 'Ads Manager CRM Collector',
-    version: '1.2.1',
+    version: '1.3.0',
     description: 'Sincronizador automático de mensagens do Facebook Marketplace e OLX para o Ads Manager CRM',
     permissions: [
-      '<all_urls>',
       'tabs',
       'storage',
-      'webRequest',
-      'notifications'
+      'notifications',
+      'alarms'
+    ],
+    host_permissions: [
+      '*://*.facebook.com/*',
+      '*://*.olx.com.br/*',
+      '<all_urls>'
     ],
     icons: {
       '16': 'icon16.png',
       '48': 'icon48.png',
       '128': 'icon48.png'
     },
-    browser_action: {
+    action: {
       default_title: 'Ads Manager CRM Collector',
       default_popup: 'popup.html',
       default_icon: 'icon48.png'
@@ -46,7 +50,7 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
       }
     ],
     background: {
-      scripts: ['background.js']
+      service_worker: 'background.js'
     }
   };
 
@@ -301,8 +305,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Poll outgoing replies queue from dashboard every 4 seconds
-setInterval(async () => {
+// Poll outgoing replies queue from dashboard
+async function pollOutgoingQueue() {
   if (!currentApiUrl) return;
 
   try {
@@ -334,7 +338,18 @@ setInterval(async () => {
       });
     }
   } catch (err) {}
-}, 4000);
+}
+
+setInterval(pollOutgoingQueue, 4000);
+
+try {
+  chrome.alarms.create('crm_poll_alarm', { periodInMinutes: 0.1 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'crm_poll_alarm') {
+      pollOutgoingQueue();
+    }
+  });
+} catch (e) {}
 `;
 
   const contentJs = `
