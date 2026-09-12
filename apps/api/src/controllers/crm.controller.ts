@@ -1,5 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import AdmZip from 'adm-zip';
 import { crmService } from '../services/crm.service.js';
+import { generateCrmExtensionFiles } from '../services/crm-extension-generator.js';
 import { CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
 
 export async function webhookHandler(
@@ -111,6 +113,49 @@ export async function markOutgoingSentHandler(
     await crmService.markReplySent(id);
     return reply.send({ success: true });
   } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function downloadExtensionHandler(
+  req: FastifyRequest<{
+    Querystring: {
+      profile_id?: string;
+      api_url?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const profileId = req.query.profile_id ? parseInt(req.query.profile_id, 10) : 1;
+    
+    // Auto-detect base URL from request headers if not provided
+    const proto = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001';
+    const defaultApiUrl = req.query.api_url || `${proto}://${host}`;
+
+    const files = generateCrmExtensionFiles({
+      profileId,
+      apiBaseUrl: defaultApiUrl,
+    });
+
+    const zip = new AdmZip();
+    for (const [filename, content] of Object.entries(files)) {
+      if (Buffer.isBuffer(content)) {
+        zip.addFile(filename, content);
+      } else {
+        zip.addFile(filename, Buffer.from(content, 'utf-8'));
+      }
+    }
+
+    const zipBuffer = zip.toBuffer();
+
+    reply.header('Content-Type', 'application/zip');
+    reply.header('Content-Disposition', 'attachment; filename="adsmanager-crm-extension.zip"');
+    reply.header('Content-Length', zipBuffer.length);
+    return reply.send(zipBuffer);
+  } catch (err: any) {
+    console.error('[CrmController] Error generating extension zip:', err);
     return reply.status(500).send({ success: false, error: err.message });
   }
 }

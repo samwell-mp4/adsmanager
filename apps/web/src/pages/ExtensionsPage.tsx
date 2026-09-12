@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Trash2,
   HelpCircle,
+  Download,
+  MessageSquare,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -190,6 +192,56 @@ export const ExtensionsPage: React.FC = () => {
           </ol>
         </div>
       )}
+
+      {/* Official Ads Manager CRM Extension Card */}
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/40 border-2 border-blue-500/40 space-y-4 shadow-xl shadow-blue-500/5 relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="flex items-start gap-4">
+            <div className="p-3.5 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
+              <MessageSquare className="h-7 w-7 text-blue-400" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  Extensão Oficial Ads Manager CRM (Facebook & OLX)
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                  Pronta para Uso
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                Varre conversas e novas mensagens no Facebook Marketplace e OLX automaticamente em segundo plano, envia os dados via webhook para o CRM e permite responder diretamente pelo painel.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1 text-blue-300">
+                  <ShieldCheck className="h-3.5 w-3.5 text-blue-400" /> Auto-instalada nos navegadores do painel
+                </span>
+                <span>•</span>
+                <span>Popup com status e configurações</span>
+                <span>•</span>
+                <span>Manifest V2 com ícone no Chrome</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <a
+              href="/api/crm/extension/download"
+              download="adsmanager-crm-extension.zip"
+              className="px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2.5 transition transform active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+              Baixar Extensão (.ZIP)
+            </a>
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-blue-500/20 flex items-center justify-between text-[11px] text-blue-300/80">
+          <span>
+            💡 <strong>Instalação no seu computador:</strong> Extraia o .zip baixado, abra <code className="bg-slate-900 px-1 py-0.5 rounded font-mono text-blue-200">chrome://extensions</code>, ative o Modo Desenvolvedor e clique em <em>"Carregar sem compactação"</em>.
+          </span>
+        </div>
+      </div>
 
       {/* Upload .ZIP Dropzone Card */}
       <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">

@@ -7,6 +7,7 @@ import {
   updateLeadStatusHandler,
   getPendingRepliesHandler,
   markOutgoingSentHandler,
+  downloadExtensionHandler,
 } from '../controllers/crm.controller.js';
 
 export async function crmRoutes(fastify: FastifyInstance) {
@@ -22,4 +23,8 @@ export async function crmRoutes(fastify: FastifyInstance) {
   // Outgoing queue polling for extension
   fastify.get('/api/crm/outgoing', getPendingRepliesHandler);
   fastify.post('/api/crm/outgoing/:id/sent', markOutgoingSentHandler);
+
+  // Download official extension package (.zip)
+  fastify.get('/api/crm/extension/download', downloadExtensionHandler);
 }
+

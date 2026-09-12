@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Tv
+  Tv,
+  Download,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -261,6 +262,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           >
             <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
           </button>
+
+          {/* Download Extension Button */}
+          <a
+            href="/api/crm/extension/download"
+            download="adsmanager-crm-extension.zip"
+            className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 hover:text-blue-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+            title="Baixar Extensão Oficial (.zip) para inspecionar ou instalar manualmente"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Baixar Extensão (.zip)</span>
+          </a>
         </div>
       </div>
 
@@ -291,12 +303,22 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 Carregando conversas sincronizadas...
               </div>
             ) : conversations.length === 0 ? (
-              <div className="py-16 px-6 text-center space-y-3">
+              <div className="py-16 px-6 text-center space-y-4">
                 <MessageSquare className="h-10 w-10 text-slate-700 mx-auto" />
                 <div className="text-xs text-slate-300 font-semibold">Nenhum chat sincronizado ainda</div>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   Inicie um perfil de navegador e acesse suas mensagens do Facebook Marketplace ou OLX. A extensão integrada capturará automaticamente os leads e sincronizará nesta tela a cada poucos segundos!
                 </p>
+                <div className="pt-2">
+                  <a
+                    href="/api/crm/extension/download"
+                    download="adsmanager-crm-extension.zip"
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 hover:text-blue-300 text-xs font-semibold transition"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Baixar Extensão (.zip)
+                  </a>
+                </div>
               </div>
             ) : (
               conversations.map((conv) => {
