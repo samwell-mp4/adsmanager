@@ -12,6 +12,8 @@ import {
   AlertCircle,
   RefreshCw,
   FolderArchive,
+  Zap,
+  Bot,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -102,7 +104,30 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
     }
   };
 
+  const [installingOfficial, setInstallingOfficial] = useState(false);
+
+  const handleInstallOfficial = async () => {
+    setInstallingOfficial(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+    try {
+      const res = await api.installOfficialExtension(profileId);
+      if (res.success) {
+        setUploadSuccess(res.message || 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!');
+        await loadCustomExtensions();
+      } else {
+        setUploadError('Falha ao instalar extensão oficial.');
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Erro ao instalar extensão oficial.');
+    } finally {
+      setInstallingOfficial(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const isCrmInstalled = customExtensions.some((e) => e.id === '__crm_collector' || e.isOfficial);
 
   const toggleExtension = (id: string) => {
     if (activeExtensions.includes(id)) {
@@ -226,6 +251,55 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
         <div className="p-6 flex-1 overflow-y-auto space-y-4">
           {tab === 'custom' ? (
             <div className="space-y-4">
+              {/* 1-Click Official Ads Manager CRM Extension Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/50 via-indigo-950/40 to-slate-900 border-2 border-blue-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-blue-500/5">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
+                    <Bot className="h-6 w-6 text-blue-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-white">Extensão Oficial Ads Manager CRM</span>
+                      {isCrmInstalled ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Instalada
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/30 text-blue-300">
+                          Disponível
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Sincroniza chats do Facebook Marketplace e OLX diretamente com a Inbox do CRM. Não precisa baixar nada no noVNC!
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleInstallOfficial}
+                  disabled={installingOfficial}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition shrink-0 disabled:opacity-60 active:scale-95"
+                >
+                  {installingOfficial ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Instalando no Perfil...
+                    </>
+                  ) : isCrmInstalled ? (
+                    <>
+                      <RefreshCw className="h-4 w-4" />
+                      Reinstalar / Atualizar
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4 text-amber-300" />
+                      Ativar com 1 Clique
+                    </>
+                  )}
+                </button>
+              </div>
+
               {/* Upload Dropzone */}
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -309,6 +383,11 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
                               v{ext.version}
                             </span>
+                            {ext.isOfficial && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                                <Bot className="h-3 w-3" /> Oficial CRM
+                              </span>
+                            )}
                             {ext.hasManifest && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                                 Manifest OK

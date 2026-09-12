@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { profileRepository } from '../repositories/profile.repository.js';
 import { ExtensionService } from '../services/extension.service.js';
+import { generateCrmExtensionFiles } from '../services/crm-extension-generator.js';
 import { config } from '../config/index.js';
 
 interface UploadExtensionBody {
@@ -84,6 +85,70 @@ export async function deleteProfileExtensionHandler(
   const deleted = ExtensionService.deleteExtension(targetDir, extId);
   return reply.send({ success: true, data: { deleted } });
 }
+
+export async function installOfficialExtensionHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  const id = parseInt(req.params.id, 10);
+  const profile = await profileRepository.findById(id);
+  if (!profile) {
+    return reply.status(404).send({
+      success: false,
+      error: { code: 'PROFILE_NOT_FOUND', message: `Perfil com ID ${id} não encontrado.` },
+    });
+  }
+
+  try {
+    const targetDir = path.join(profile.chrome_data_path, 'custom_extensions');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true, mode: 0o777 });
+    }
+
+    const crmExtDir = path.join(targetDir, '__crm_collector');
+    if (!fs.existsSync(crmExtDir)) {
+      fs.mkdirSync(crmExtDir, { recursive: true, mode: 0o777 });
+    }
+
+    const proto = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001';
+    const apiBaseUrl = `${proto}://${host}`;
+
+    const files = generateCrmExtensionFiles({
+      profileId: profile.id,
+      profileUuid: profile.uuid,
+      apiBaseUrl,
+    });
+
+    for (const [filename, content] of Object.entries(files)) {
+      const filePath = path.join(crmExtDir, filename);
+      if (Buffer.isBuffer(content)) {
+        fs.writeFileSync(filePath, content);
+      } else {
+        fs.writeFileSync(filePath, content, 'utf-8');
+      }
+    }
+
+    fs.chmodSync(crmExtDir, 0o777);
+
+    return reply.send({
+      success: true,
+      message: 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!',
+      data: {
+        id: '__crm_collector',
+        name: 'Ads Manager CRM Collector (Oficial)',
+        version: '1.2.1',
+        isOfficial: true,
+      },
+    });
+  } catch (err: any) {
+    return reply.status(500).send({
+      success: false,
+      error: { code: 'INSTALL_FAILED', message: err.message },
+    });
+  }
+}
+
 
 export async function uploadGlobalExtensionHandler(
   req: FastifyRequest<{ Body: UploadExtensionBody }>,

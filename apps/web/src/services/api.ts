@@ -203,6 +203,14 @@ export const api = {
     return json.data || [];
   },
 
+  async installOfficialExtension(profileId: number): Promise<{ success: boolean; message: string; data?: any }> {
+    const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/install-official`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return handleResponse<{ success: boolean; message: string; data?: any }>(res);
+  },
+
   async deleteProfileExtension(profileId: number, extId: string): Promise<void> {
     const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/${extId}`, {
       method: 'DELETE',

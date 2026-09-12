@@ -3,19 +3,30 @@ import {
   uploadProfileExtensionHandler,
   listProfileExtensionsHandler,
   deleteProfileExtensionHandler,
+  installOfficialExtensionHandler,
   uploadGlobalExtensionHandler,
   listGlobalExtensionsHandler,
   deleteGlobalExtensionHandler,
 } from '../controllers/extension.controller.js';
 
 export async function extensionRoutes(fastify: FastifyInstance) {
-  // Profile-specific custom extensions
-  fastify.post('/profiles/:id/extensions/upload', uploadProfileExtensionHandler);
-  fastify.get('/profiles/:id/extensions', listProfileExtensionsHandler);
-  fastify.delete('/profiles/:id/extensions/:extId', deleteProfileExtensionHandler);
+  // Profile-specific custom extensions (support both /api prefix and root for full compatibility)
+  const profileUploadUrls = ['/api/profiles/:id/extensions/upload', '/profiles/:id/extensions/upload'];
+  const profileListUrls = ['/api/profiles/:id/extensions', '/profiles/:id/extensions'];
+  const profileDeleteUrls = ['/api/profiles/:id/extensions/:extId', '/profiles/:id/extensions/:extId'];
+  const profileInstallUrls = ['/api/profiles/:id/extensions/install-official', '/profiles/:id/extensions/install-official'];
+
+  for (const url of profileUploadUrls) fastify.post(url, uploadProfileExtensionHandler);
+  for (const url of profileListUrls) fastify.get(url, listProfileExtensionsHandler);
+  for (const url of profileDeleteUrls) fastify.delete(url, deleteProfileExtensionHandler);
+  for (const url of profileInstallUrls) fastify.post(url, installOfficialExtensionHandler);
 
   // Global extensions catalog
-  fastify.post('/extensions/upload', uploadGlobalExtensionHandler);
-  fastify.get('/extensions', listGlobalExtensionsHandler);
-  fastify.delete('/extensions/:extId', deleteGlobalExtensionHandler);
+  const globalUploadUrls = ['/api/extensions/upload', '/extensions/upload'];
+  const globalListUrls = ['/api/extensions', '/extensions'];
+  const globalDeleteUrls = ['/api/extensions/:extId', '/extensions/:extId'];
+
+  for (const url of globalUploadUrls) fastify.post(url, uploadGlobalExtensionHandler);
+  for (const url of globalListUrls) fastify.get(url, listGlobalExtensionsHandler);
+  for (const url of globalDeleteUrls) fastify.delete(url, deleteGlobalExtensionHandler);
 }
