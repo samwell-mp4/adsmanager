@@ -34,6 +34,21 @@ const fastify = Fastify({
   },
 });
 
+// Gracefully handle empty or whitespace JSON bodies without throwing 400 Bad Request
+fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+  try {
+    if (!body || (typeof body === 'string' && !body.trim())) {
+      done(null, {});
+      return;
+    }
+    const json = JSON.parse(body as string);
+    done(null, json);
+  } catch (err: any) {
+    err.statusCode = 400;
+    done(err, undefined);
+  }
+});
+
 // Log every incoming request immediately so it is 100% visible in Easypanel logs
 fastify.addHook('onRequest', async (request) => {
   console.log(`[HTTP INCOMING] ${request.method} ${request.url} from ${request.ip}`);

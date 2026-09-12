@@ -207,6 +207,7 @@ export const api = {
     const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/install-official`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     });
     return handleResponse<{ success: boolean; message: string; data?: any }>(res);
   },
