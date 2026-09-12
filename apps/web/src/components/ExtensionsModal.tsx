@@ -105,6 +105,22 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
   };
 
   const [installingOfficial, setInstallingOfficial] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  const handleRestartProfile = async () => {
+    setRestarting(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+    try {
+      await api.restartProfile(profileId);
+      setUploadSuccess('Perfil reiniciado com sucesso! O Chrome já está reabrindo com as extensões ativas.');
+      await loadCustomExtensions();
+    } catch (err: any) {
+      setUploadError(err.message || 'Erro ao reiniciar perfil.');
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   const handleInstallOfficial = async () => {
     setInstallingOfficial(true);
@@ -248,52 +264,93 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
           {tab === 'custom' ? (
             <div className="space-y-4">
               {/* 1-Click Official Ads Manager CRM Extension Card */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/50 via-indigo-950/40 to-slate-900 border-2 border-blue-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-blue-500/5">
-                <div className="flex items-start gap-3.5">
-                  <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
-                    <Bot className="h-6 w-6 text-blue-400" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">Extensão Oficial Ads Manager CRM</span>
-                      {isCrmInstalled ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
-                          <Check className="h-3 w-3" /> Instalada
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/30 text-blue-300">
-                          Disponível
-                        </span>
-                      )}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/50 via-indigo-950/40 to-slate-900 border-2 border-blue-500/40 flex flex-col gap-4 shadow-lg shadow-blue-500/5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
+                      <Bot className="h-6 w-6 text-blue-400" />
                     </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      Sincroniza chats do Facebook Marketplace e OLX com o CRM. O arquivo .zip também está salvo em <code className="text-blue-300 font-mono text-[11px] bg-slate-900 px-1 py-0.5 rounded">/tmp/adsmanager-crm-extension.zip</code>.
-                    </p>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">Extensão Oficial Ads Manager CRM</span>
+                        {isCrmInstalled ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
+                            <Check className="h-3 w-3" /> Instalada
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 border border-blue-500/30 text-blue-300">
+                            Disponível
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Sincroniza chats do Facebook Marketplace e OLX com o CRM. Já em formato Manifest V3 compatível com Chrome 128+.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <a
+                      href={api.getOfficialExtensionDownloadUrl(profileId)}
+                      download="adsmanager-crm-extension.zip"
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition active:scale-95"
+                      title="Baixar arquivo ZIP no seu computador"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Baixar .ZIP
+                    </a>
+
+                    <button
+                      onClick={handleRestartProfile}
+                      disabled={restarting}
+                      className="px-3 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50 active:scale-95"
+                      title="Reinicia o container do navegador para ativar imediatamente"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${restarting ? 'animate-spin' : ''}`} />
+                      {restarting ? 'Reiniciando...' : 'Reiniciar Perfil'}
+                    </button>
+
+                    <button
+                      onClick={handleInstallOfficial}
+                      disabled={installingOfficial}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition disabled:opacity-60 active:scale-95"
+                    >
+                      {installingOfficial ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Instalando...
+                        </>
+                      ) : isCrmInstalled ? (
+                        <>
+                          <RefreshCw className="h-4 w-4" />
+                          Reinstalar / Atualizar
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="h-4 w-4 text-amber-300" />
+                          Ativar com 1 Clique
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                <button
-                  onClick={handleInstallOfficial}
-                  disabled={installingOfficial}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition shrink-0 disabled:opacity-60 active:scale-95"
-                >
-                  {installingOfficial ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Instalando no Perfil...
-                    </>
-                  ) : isCrmInstalled ? (
-                    <>
-                      <RefreshCw className="h-4 w-4" />
-                      Reinstalar / Atualizar
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-4 w-4 text-amber-300" />
-                      Ativar com 1 Clique
-                    </>
-                  )}
-                </button>
+                {/* Step-by-Step Instructions */}
+                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-xs space-y-2">
+                  <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <span className="text-amber-400">💡</span> Como ativar no Chrome (VNC):
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800 text-slate-400">
+                      <span className="font-semibold text-emerald-400 block mb-0.5">Opção 1: Automática</span>
+                      Clique em <strong className="text-slate-200">Ativar com 1 Clique</strong> e depois em <strong className="text-slate-200">Reiniciar Perfil</strong>. O Chrome reabre sozinho com a extensão já carregada!
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800 text-slate-400">
+                      <span className="font-semibold text-blue-400 block mb-0.5">Opção 2: Manual no Chrome</span>
+                      Na tela <code className="text-slate-200 bg-slate-800 px-1 rounded">chrome://extensions</code>, clique em <strong className="text-slate-200">Load unpacked</strong> e escolha a pasta <strong className="text-slate-200">Desktop &gt; adsmanager_crm</strong>. Não precisa usar Google Drive!
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Upload Dropzone */}

@@ -86,6 +86,45 @@ export async function deleteProfileExtensionHandler(
   return reply.send({ success: true, data: { deleted } });
 }
 
+import { dockerManager } from '../managers/docker.manager.js';
+
+export async function downloadOfficialExtensionHandler(
+  req: FastifyRequest<{ Params: { id?: string } }>,
+  reply: FastifyReply
+) {
+  let profile = null;
+  if (req.params?.id) {
+    const id = parseInt(req.params.id, 10);
+    profile = await profileRepository.findById(id);
+  }
+
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001';
+  const apiBaseUrl = `${proto}://${host}`;
+
+  const files = generateCrmExtensionFiles({
+    profileId: profile?.id || 1,
+    profileUuid: profile?.uuid || 'default',
+    apiBaseUrl,
+  });
+
+  const AdmZip = (await import('adm-zip')).default;
+  const zip = new AdmZip();
+
+  for (const [filename, content] of Object.entries(files)) {
+    if (Buffer.isBuffer(content)) {
+      zip.addFile(filename, content);
+    } else {
+      zip.addFile(filename, Buffer.from(content, 'utf-8'));
+    }
+  }
+
+  const buffer = zip.toBuffer();
+  reply.header('Content-Type', 'application/zip');
+  reply.header('Content-Disposition', 'attachment; filename="adsmanager-crm-extension.zip"');
+  return reply.send(buffer);
+}
+
 export async function installOfficialExtensionHandler(
   req: FastifyRequest<{ Params: { id: string } }>,
   reply: FastifyReply
@@ -105,10 +144,12 @@ export async function installOfficialExtensionHandler(
       fs.mkdirSync(targetDir, { recursive: true, mode: 0o777 });
     }
 
-    // Clean up old reserved __crm_collector folder if present
-    const oldCrmExtDir = path.join(targetDir, '__crm_collector');
-    if (fs.existsSync(oldCrmExtDir)) {
-      try { fs.rmSync(oldCrmExtDir, { recursive: true, force: true }); } catch {}
+    // Clean up old reserved folders
+    for (const legacy of ['__crm_collector', '__proxy_auth', '__anti_detect']) {
+      const oldDir = path.join(targetDir, legacy);
+      if (fs.existsSync(oldDir)) {
+        try { fs.rmSync(oldDir, { recursive: true, force: true }); } catch {}
+      }
     }
 
     // Use adsmanager_crm (no leading underscore, fully compliant with Chromium)
@@ -160,14 +201,42 @@ export async function installOfficialExtensionHandler(
       } catch {}
     }
 
+    // Also mirror to Desktop/Downloads folders if accessible
+    for (const sub of ['Desktop', 'Downloads']) {
+      try {
+        const subDir = path.join(profile.chrome_data_path, sub, 'adsmanager_crm');
+        if (!fs.existsSync(subDir)) {
+          fs.mkdirSync(subDir, { recursive: true, mode: 0o777 });
+        }
+        for (const [filename, content] of Object.entries(files)) {
+          const filePath = path.join(subDir, filename);
+          if (Buffer.isBuffer(content)) {
+            fs.writeFileSync(filePath, content);
+          } else {
+            fs.writeFileSync(filePath, content, 'utf-8');
+          }
+          try { fs.chmodSync(filePath, 0o777); } catch {}
+        }
+      } catch {}
+    }
+
+    // If container is currently running, signal Chrome restart inside container so it loads flags immediately!
+    let chromeRestarted = false;
+    if (profile.container_name) {
+      chromeRestarted = await dockerManager.restartChromeInContainer(profile.container_name);
+    }
+
     return reply.send({
       success: true,
-      message: 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil e salva em /tmp!',
+      message: chromeRestarted
+        ? 'Extensão Oficial Ads Manager CRM instalada! O Chrome no VNC está sendo reiniciado agora com a extensão ativa.'
+        : 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!',
       data: {
         id: 'adsmanager_crm',
         name: 'Ads Manager CRM Collector (Oficial)',
-        version: '1.2.1',
+        version: '1.3.0',
         isOfficial: true,
+        chromeRestarted,
       },
     });
   } catch (err: any) {

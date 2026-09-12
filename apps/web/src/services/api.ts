@@ -220,6 +220,12 @@ export const api = {
     return json;
   },
 
+  getOfficialExtensionDownloadUrl(profileId?: number): string {
+    return profileId
+      ? `${API_BASE}/profiles/${profileId}/extensions/official/download`
+      : `${API_BASE}/extensions/crm/download`;
+  },
+
   async deleteProfileExtension(profileId: number, extId: string): Promise<void> {
     const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions/${extId}`, {
       method: 'DELETE',

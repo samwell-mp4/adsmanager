@@ -216,144 +216,12 @@ export class DockerManager {
       fs.chmodSync(profile.chrome_data_path, 0o777);
       fs.chmodSync(customExtDir, 0o777);
 
-      // Auto-inject Chrome Proxy Authentication Extension for bulletproof credentials handling
-      if (proxy && proxy.username && proxy.password) {
-        try {
-          const proxyExtDir = path.join(customExtDir, '__proxy_auth');
-          if (!fs.existsSync(proxyExtDir)) {
-            fs.mkdirSync(proxyExtDir, { recursive: true, mode: 0o777 });
-          }
-          const manifestJson = {
-            version: '1.0.0',
-            manifest_version: 2,
-            name: 'Chrome Proxy Auth',
-            permissions: ['proxy', 'webRequest', 'webRequestBlocking', '<all_urls>'],
-            background: {
-              scripts: ['background.js'],
-            },
-            minimum_chrome_version: '22.0.0',
-          };
-          fs.writeFileSync(path.join(proxyExtDir, 'manifest.json'), JSON.stringify(manifestJson, null, 2));
-          const backgroundJs = `
-chrome.webRequest.onAuthRequired.addListener(
-  function(details) {
-    return {
-      authCredentials: {
-        username: ${JSON.stringify(proxy.username)},
-        password: ${JSON.stringify(proxy.password)}
-      }
-    };
-  },
-  { urls: ["<all_urls>"] },
-  ["blocking"]
-);
-`;
-          fs.writeFileSync(path.join(proxyExtDir, 'background.js'), backgroundJs);
-          fs.chmodSync(proxyExtDir, 0o777);
-          console.log(`[DockerManager] Injected native proxy auth extension for ${proxy.host}:${proxy.port}`);
-        } catch (extErr: any) {
-          console.warn('[DockerManager] Notice injecting proxy auth extension:', extErr.message);
+      // Clean up any legacy or invalid extension directories (e.g. starting with __ or Manifest V2)
+      for (const legacyDir of ['__proxy_auth', '__anti_detect', '__crm_collector']) {
+        const fullLegacyPath = path.join(customExtDir, legacyDir);
+        if (fs.existsSync(fullLegacyPath)) {
+          try { fs.rmSync(fullLegacyPath, { recursive: true, force: true }); } catch {}
         }
-      } else {
-        try {
-          const proxyExtDir = path.join(customExtDir, '__proxy_auth');
-          if (fs.existsSync(proxyExtDir)) {
-            fs.rmSync(proxyExtDir, { recursive: true, force: true });
-          }
-        } catch {}
-      }
-
-      // Auto-inject Stealth Anti-Detection Extension to strip navigator.webdriver and match genuine browser
-      try {
-        const stealthExtDir = path.join(customExtDir, '__anti_detect');
-        if (!fs.existsSync(stealthExtDir)) {
-          fs.mkdirSync(stealthExtDir, { recursive: true, mode: 0o777 });
-        }
-        const stealthManifest = {
-          version: '1.0.0',
-          manifest_version: 2,
-          name: 'Stealth Shield',
-          content_scripts: [
-            {
-              matches: ['<all_urls>'],
-              js: ['stealth.js'],
-              run_at: 'document_start',
-              all_frames: true,
-            },
-          ],
-        };
-        fs.writeFileSync(path.join(stealthExtDir, 'manifest.json'), JSON.stringify(stealthManifest, null, 2));
-        const stealthJs = `
-(function() {
-  function injectStealth() {
-    try {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => undefined,
-        configurable: true
-      });
-      if (window.navigator && window.navigator.__proto__) {
-        delete window.navigator.__proto__.webdriver;
-      }
-    } catch (e) {}
-
-    try {
-      if (!window.chrome) {
-        window.chrome = {};
-      }
-      if (!window.chrome.runtime) {
-        window.chrome.runtime = {
-          PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
-          PlatformArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' },
-          PlatformNaclArch: { ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64' }
-        };
-      }
-    } catch (e) {}
-
-    try {
-      const fakePlugins = [
-        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
-      ];
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => fakePlugins,
-        configurable: true
-      });
-    } catch (e) {}
-
-    try {
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['pt-BR', 'pt', 'en-US', 'en'],
-        configurable: true
-      });
-    } catch (e) {}
-
-    try {
-      if (navigator.permissions && navigator.permissions.query) {
-        const origQuery = navigator.permissions.query;
-        navigator.permissions.query = (parameters) => (
-          parameters && parameters.name === 'notifications' ?
-            Promise.resolve({ state: Notification.permission }) :
-            origQuery(parameters)
-        );
-      }
-    } catch (e) {}
-  }
-
-  injectStealth();
-
-  try {
-    const s = document.createElement('script');
-    s.textContent = '(' + injectStealth.toString() + ')();';
-    (document.head || document.documentElement).appendChild(s);
-    s.remove();
-  } catch (e) {}
-})();
-`;
-        fs.writeFileSync(path.join(stealthExtDir, 'stealth.js'), stealthJs);
-        fs.chmodSync(stealthExtDir, 0o777);
-      } catch (stealthErr: any) {
-        console.warn('[DockerManager] Notice injecting stealth extension:', stealthErr.message);
       }
 
       // Auto-inject CRM Agent Extension to scrape Facebook Marketplace / OLX chats and dispatch replies
@@ -512,6 +380,30 @@ chrome.webRequest.onAuthRequired.addListener(
       if (err.statusCode !== 404) {
         console.error(`[DockerManager] Error removing container ${containerName}:`, err.message);
       }
+    }
+  }
+
+  /**
+   * Restarts Chrome inside the running container by killing the process,
+   * triggering entrypoint supervisor to re-launch Chrome with newly placed extensions.
+   */
+  async restartChromeInContainer(containerName: string): Promise<boolean> {
+    try {
+      const container = this.docker.getContainer(containerName);
+      const data = await container.inspect();
+      if (!data.State.Running) return false;
+
+      console.log(`[DockerManager] Signaling Chrome restart inside container ${containerName}...`);
+      const exec = await container.exec({
+        Cmd: ['pkill', '-f', 'chrome'],
+        AttachStdout: false,
+        AttachStderr: false,
+      });
+      await exec.start({});
+      return true;
+    } catch (err: any) {
+      console.warn(`[DockerManager] Could not signal Chrome restart in ${containerName}:`, err.message);
+      return false;
     }
   }
 

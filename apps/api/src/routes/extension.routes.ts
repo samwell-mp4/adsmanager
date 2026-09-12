@@ -4,6 +4,7 @@ import {
   listProfileExtensionsHandler,
   deleteProfileExtensionHandler,
   installOfficialExtensionHandler,
+  downloadOfficialExtensionHandler,
   uploadGlobalExtensionHandler,
   listGlobalExtensionsHandler,
   deleteGlobalExtensionHandler,
@@ -15,11 +16,17 @@ export async function extensionRoutes(fastify: FastifyInstance) {
   const profileListUrls = ['/api/profiles/:id/extensions', '/profiles/:id/extensions'];
   const profileDeleteUrls = ['/api/profiles/:id/extensions/:extId', '/profiles/:id/extensions/:extId'];
   const profileInstallUrls = ['/api/profiles/:id/extensions/install-official', '/profiles/:id/extensions/install-official'];
+  const profileDownloadUrls = ['/api/profiles/:id/extensions/official/download', '/profiles/:id/extensions/official/download'];
 
   for (const url of profileUploadUrls) fastify.post(url, uploadProfileExtensionHandler);
   for (const url of profileListUrls) fastify.get(url, listProfileExtensionsHandler);
   for (const url of profileDeleteUrls) fastify.delete(url, deleteProfileExtensionHandler);
   for (const url of profileInstallUrls) fastify.post(url, installOfficialExtensionHandler);
+  for (const url of profileDownloadUrls) fastify.get(url, downloadOfficialExtensionHandler);
+
+  // Global extensions catalog & direct download
+  const globalDownloadUrls = ['/api/extensions/crm/download', '/extensions/crm/download'];
+  for (const url of globalDownloadUrls) fastify.get(url, downloadOfficialExtensionHandler);
 
   // Global extensions catalog
   const globalUploadUrls = ['/api/extensions/upload', '/extensions/upload'];
