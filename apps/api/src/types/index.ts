@@ -118,3 +118,77 @@ export interface HealthStatus {
   docker: boolean;
   timestamp: string;
 }
+
+export type CrmPlatform = 'facebook' | 'olx' | 'whatsapp';
+export type LeadStatus = 'novo' | 'em_negociacao' | 'fechado' | 'perdido';
+
+export interface CrmConversation {
+  id: number;
+  profile_id: number | null;
+  profile_name?: string;
+  platform: CrmPlatform;
+  external_id: string;
+  customer_name: string;
+  customer_avatar: string | null;
+  product_title: string | null;
+  product_price: string | null;
+  product_image: string | null;
+  product_url: string | null;
+  last_message: string | null;
+  last_message_at: Date | string;
+  unread_count: number;
+  lead_status: LeadStatus;
+  notes: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export interface CrmMessage {
+  id: number;
+  conversation_id: number;
+  sender_type: 'customer' | 'me';
+  sender_name: string | null;
+  content: string;
+  external_id: string | null;
+  sent_at: Date | string;
+  created_at: Date | string;
+}
+
+export interface CrmOutgoingMessage {
+  id: number;
+  conversation_id: number;
+  profile_id: number;
+  platform: CrmPlatform;
+  external_id: string;
+  message_text: string;
+  status: 'pending' | 'sent' | 'failed';
+  attempts: number;
+  error_message?: string | null;
+  created_at: Date | string;
+  sent_at?: Date | string | null;
+}
+
+export interface CrmWebhookPayload {
+  profile_uuid?: string;
+  profile_id?: number;
+  platform: CrmPlatform;
+  conversations?: Array<{
+    external_id: string;
+    customer_name: string;
+    customer_avatar?: string;
+    product_title?: string;
+    product_price?: string;
+    product_image?: string;
+    product_url?: string;
+    last_message?: string;
+    last_message_at?: string;
+    unread?: boolean;
+    messages?: Array<{
+      external_id?: string;
+      sender_type: 'customer' | 'me';
+      sender_name?: string;
+      content: string;
+      sent_at?: string;
+    }>;
+  }>;
+}

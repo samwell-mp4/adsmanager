@@ -7,6 +7,7 @@ import { ProfileDetailPage } from './pages/ProfileDetailPage.js';
 import { ProxiesPage } from './pages/ProxiesPage.js';
 import { ExtensionsPage } from './pages/ExtensionsPage.js';
 import { GroupsPage } from './pages/GroupsPage.js';
+import { CrmPage } from './pages/CrmPage.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +27,7 @@ export const App: React.FC = () => {
           <main className="flex-1 min-w-0 overflow-y-auto max-h-screen">
             <Routes>
               <Route path="/" element={<ProfilesPage />} />
+              <Route path="/crm" element={<CrmPage />} />
               <Route path="/profiles/:id" element={<ProfileDetailPage />} />
               <Route path="/proxies" element={<ProxiesPage />} />
               <Route path="/extensions" element={<ExtensionsPage />} />

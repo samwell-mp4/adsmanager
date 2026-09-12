@@ -136,6 +136,8 @@ async function start() {
     await fastify.register(proxyRoutes);
     await fastify.register(profileRoutes);
     await fastify.register(extensionRoutes);
+    const { crmRoutes } = await import('./routes/crm.routes.js');
+    await fastify.register(crmRoutes);
 
     console.log('[API] Checking database connection...');
     const isDbConnected = await testDbConnection();

@@ -8,7 +8,8 @@ import {
   FolderKanban, 
   Activity, 
   ChevronLeft, 
-  ChevronRight
+  ChevronRight,
+  MessageSquare
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -38,8 +39,9 @@ export const Sidebar: React.FC<SidebarProps> = () => {
 
   const navItems = [
     { name: 'Perfis de Navegador', path: '/', icon: Layers, badge: null },
+    { name: 'CRM & Chats (Inbox)', path: '/crm', icon: MessageSquare, badge: 'Novo' },
     { name: 'Gerenciador de Proxies', path: '/proxies', icon: Shield, badge: null },
-    { name: 'Extensões do Google', path: '/extensions', icon: Puzzle, badge: 'Novo' },
+    { name: 'Extensões do Google', path: '/extensions', icon: Puzzle, badge: null },
     { name: 'Grupos & Campanhas', path: '/groups', icon: FolderKanban, badge: null },
   ];
 

@@ -10,7 +10,7 @@ export class AutomationService {
   /**
    * Helper to lazily load playwright-core so server never crashes on startup
    */
-  private async getChromium() {
+  async getChromium() {
     try {
       const pw = await import('playwright-core');
       return pw.chromium;

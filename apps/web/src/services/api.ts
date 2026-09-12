@@ -231,4 +231,47 @@ export const api = {
     });
     await handleResponse<any>(res);
   },
+
+  // CRM Omnichannel Endpoints
+  async getCrmConversations(params?: {
+    profile_id?: number;
+    platform?: string;
+    lead_status?: string;
+    search?: string;
+  }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.profile_id) query.append('profile_id', String(params.profile_id));
+    if (params?.platform) query.append('platform', params.platform);
+    if (params?.lead_status) query.append('lead_status', params.lead_status);
+    if (params?.search) query.append('search', params.search);
+
+    const res = await fetch(`${API_BASE}/crm/conversations?${query.toString()}`);
+    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
+    return json.data || [];
+  },
+
+  async getCrmConversationDetails(id: number): Promise<{ conversation: any; messages: any[] }> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${id}`);
+    const json = await handleResponse<{ success: boolean; data: { conversation: any; messages: any[] } }>(res);
+    return json.data;
+  },
+
+  async sendCrmReply(id: number, message: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${id}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async updateCrmLeadStatus(id: number, lead_status: string, notes?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_status, notes }),
+    });
+    const json = await handleResponse<{ success: boolean; data: any }>(res);
+    return json.data;
+  },
 };
