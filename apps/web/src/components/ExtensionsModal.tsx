@@ -112,12 +112,8 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
     setUploadSuccess(null);
     try {
       const res = await api.installOfficialExtension(profileId);
-      if (res.success) {
-        setUploadSuccess(res.message || 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!');
-        await loadCustomExtensions();
-      } else {
-        setUploadError('Falha ao instalar extensão oficial.');
-      }
+      setUploadSuccess(res.message || 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!');
+      await loadCustomExtensions();
     } catch (err: any) {
       setUploadError(err.message || 'Erro ao instalar extensão oficial.');
     } finally {

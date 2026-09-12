@@ -194,7 +194,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename, fileBase64 }),
     });
-    return handleResponse<{ success: boolean; data: any }>(res);
+    const json = await res.json();
+    if (!res.ok || json.success === false) {
+      throw new Error(json.error?.message || json.message || 'Falha ao descompactar extensão');
+    }
+    return json;
   },
 
   async getProfileExtensions(profileId: number): Promise<any[]> {
@@ -209,7 +213,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    return handleResponse<{ success: boolean; message: string; data?: any }>(res);
+    const json = await res.json();
+    if (!res.ok || json.success === false) {
+      throw new Error(json.error?.message || json.message || 'Falha ao instalar extensão oficial');
+    }
+    return json;
   },
 
   async deleteProfileExtension(profileId: number, extId: string): Promise<void> {
