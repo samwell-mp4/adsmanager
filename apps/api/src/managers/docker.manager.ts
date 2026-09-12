@@ -345,6 +345,17 @@ export class DockerManager {
 
     await (container as any).start();
     console.log(`[DockerManager] Container ${containerName} started successfully.`);
+
+    // Auto-inject official CRM extension directly into container filesystem
+    setTimeout(async () => {
+      try {
+        await this.injectOfficialCrmExtension(containerName, profile.id, profile.uuid);
+        await this.restartChromeInContainer(containerName);
+      } catch (injErr: any) {
+        console.warn(`[DockerManager] Notice auto-injecting CRM extension into ${containerName}:`, injErr.message);
+      }
+    }, 1500);
+
     return containerName;
   }
 
@@ -380,6 +391,88 @@ export class DockerManager {
       if (err.statusCode !== 404) {
         console.error(`[DockerManager] Error removing container ${containerName}:`, err.message);
       }
+    }
+  }
+
+  /**
+   * Executes a command inside the container and waits for completion
+   */
+  async execInContainer(containerName: string, cmd: string[]): Promise<boolean> {
+    try {
+      const container = this.docker.getContainer(containerName);
+      const data = await container.inspect();
+      if (!data.State.Running) return false;
+
+      const exec = await container.exec({
+        Cmd: cmd,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const stream = await exec.start({ hijack: true, stdin: false });
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 8000);
+        stream.on('end', () => { clearTimeout(timer); resolve(true); });
+        stream.on('close', () => { clearTimeout(timer); resolve(true); });
+        stream.on('error', () => { clearTimeout(timer); resolve(false); });
+      });
+      return true;
+    } catch (err: any) {
+      console.warn(`[DockerManager] execInContainer error in ${containerName}:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Injects a zip file directly into the container's custom_extensions and Desktop
+   */
+  async injectZipIntoContainer(containerName: string, extFolderName: string, zipBase64: string): Promise<boolean> {
+    try {
+      const script = `
+mkdir -p /home/browser/profile/custom_extensions/${extFolderName} /home/browser/Desktop/${extFolderName} /home/browser/Downloads/${extFolderName} /tmp
+echo "${zipBase64}" | base64 -d > /tmp/injected_${extFolderName}.zip
+unzip -o -q /tmp/injected_${extFolderName}.zip -d /home/browser/profile/custom_extensions/${extFolderName}
+cp -rf /home/browser/profile/custom_extensions/${extFolderName}/* /home/browser/Desktop/${extFolderName}/ 2>/dev/null || true
+cp -rf /home/browser/profile/custom_extensions/${extFolderName}/* /home/browser/Downloads/${extFolderName}/ 2>/dev/null || true
+chmod -R 777 /home/browser/profile/custom_extensions /home/browser/Desktop /home/browser/Downloads
+rm -f /tmp/injected_${extFolderName}.zip
+`;
+      return await this.execInContainer(containerName, ['bash', '-c', script]);
+    } catch (err: any) {
+      console.warn(`[DockerManager] Failed to inject zip into ${containerName}:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Injects the official Ads Manager CRM Collector extension directly into container
+   */
+  async injectOfficialCrmExtension(containerName: string, profileId: number, profileUuid: string): Promise<boolean> {
+    try {
+      const hostIp = await this.getHostGatewayIp();
+      const apiBaseUrl = `http://${hostIp}:${config.port}`;
+      const files = generateCrmExtensionFiles({
+        profileId,
+        profileUuid,
+        apiBaseUrl,
+      });
+
+      const AdmZip = (await import('adm-zip')).default;
+      const zip = new AdmZip();
+      for (const [filename, content] of Object.entries(files)) {
+        if (Buffer.isBuffer(content)) {
+          zip.addFile(filename, content);
+        } else {
+          zip.addFile(filename, Buffer.from(content, 'utf-8'));
+        }
+      }
+
+      const zipBase64 = zip.toBuffer().toString('base64');
+      const injected = await this.injectZipIntoContainer(containerName, 'adsmanager_crm', zipBase64);
+      console.log(`[DockerManager] Official CRM extension injected into container ${containerName}: ${injected}`);
+      return injected;
+    } catch (err: any) {
+      console.warn(`[DockerManager] Failed to inject official CRM extension into ${containerName}:`, err.message);
+      return false;
     }
   }
 

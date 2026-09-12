@@ -40,6 +40,12 @@ export async function uploadProfileExtensionHandler(
     }
 
     const meta = await ExtensionService.extractAndInstallExtension(targetDir, filename || 'extension.zip', buffer);
+    if (profile.container_name) {
+      try {
+        await dockerManager.injectZipIntoContainer(profile.container_name, meta.id, buffer.toString('base64'));
+        await dockerManager.restartChromeInContainer(profile.container_name);
+      } catch {}
+    }
     return reply.send({ success: true, data: meta });
   } catch (err: any) {
     return reply.status(400).send({
@@ -220,10 +226,15 @@ export async function installOfficialExtensionHandler(
       } catch {}
     }
 
-    // If container is currently running, signal Chrome restart inside container so it loads flags immediately!
+    // If container is currently running, inject files directly into container and restart Chrome!
     let chromeRestarted = false;
     if (profile.container_name) {
-      chromeRestarted = await dockerManager.restartChromeInContainer(profile.container_name);
+      try {
+        await dockerManager.injectOfficialCrmExtension(profile.container_name, profile.id, profile.uuid);
+        chromeRestarted = await dockerManager.restartChromeInContainer(profile.container_name);
+      } catch (injErr: any) {
+        console.warn('[ExtensionController] Notice injecting into container:', injErr.message);
+      }
     }
 
     return reply.send({
