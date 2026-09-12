@@ -123,7 +123,7 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isCrmInstalled = customExtensions.some((e) => e.id === '__crm_collector' || e.isOfficial);
+  const isCrmInstalled = customExtensions.some((e) => e.id === 'adsmanager_crm' || e.id === '__crm_collector' || e.isOfficial);
 
   const toggleExtension = (id: string) => {
     if (activeExtensions.includes(id)) {
@@ -267,7 +267,7 @@ export const ExtensionsModal: React.FC<ExtensionsModalProps> = ({
                       )}
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      Sincroniza chats do Facebook Marketplace e OLX diretamente com a Inbox do CRM. Não precisa baixar nada no noVNC!
+                      Sincroniza chats do Facebook Marketplace e OLX com o CRM. O arquivo .zip também está salvo em <code className="text-blue-300 font-mono text-[11px] bg-slate-900 px-1 py-0.5 rounded">/tmp/adsmanager-crm-extension.zip</code>.
                     </p>
                   </div>
                 </div>

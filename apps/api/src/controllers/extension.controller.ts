@@ -105,7 +105,14 @@ export async function installOfficialExtensionHandler(
       fs.mkdirSync(targetDir, { recursive: true, mode: 0o777 });
     }
 
-    const crmExtDir = path.join(targetDir, '__crm_collector');
+    // Clean up old reserved __crm_collector folder if present
+    const oldCrmExtDir = path.join(targetDir, '__crm_collector');
+    if (fs.existsSync(oldCrmExtDir)) {
+      try { fs.rmSync(oldCrmExtDir, { recursive: true, force: true }); } catch {}
+    }
+
+    // Use adsmanager_crm (no leading underscore, fully compliant with Chromium)
+    const crmExtDir = path.join(targetDir, 'adsmanager_crm');
     if (!fs.existsSync(crmExtDir)) {
       fs.mkdirSync(crmExtDir, { recursive: true, mode: 0o777 });
     }
@@ -120,22 +127,44 @@ export async function installOfficialExtensionHandler(
       apiBaseUrl,
     });
 
+    const AdmZip = (await import('adm-zip')).default;
+    const zip = new AdmZip();
+
     for (const [filename, content] of Object.entries(files)) {
       const filePath = path.join(crmExtDir, filename);
       if (Buffer.isBuffer(content)) {
         fs.writeFileSync(filePath, content);
+        zip.addFile(filename, content);
       } else {
         fs.writeFileSync(filePath, content, 'utf-8');
+        zip.addFile(filename, Buffer.from(content, 'utf-8'));
       }
+      try { fs.chmodSync(filePath, 0o777); } catch {}
     }
 
-    fs.chmodSync(crmExtDir, 0o777);
+    try { fs.chmodSync(crmExtDir, 0o777); } catch {}
+
+    // Save extension.zip to /tmp and profile directory
+    const zipBuffer = zip.toBuffer();
+    const saveLocations = [
+      '/tmp/adsmanager-crm-extension.zip',
+      '/tmp/extension.zip',
+      path.join(profile.chrome_data_path, 'extension.zip'),
+      path.join(profile.chrome_data_path, 'adsmanager-crm-extension.zip'),
+    ];
+
+    for (const loc of saveLocations) {
+      try {
+        fs.writeFileSync(loc, zipBuffer);
+        fs.chmodSync(loc, 0o777);
+      } catch {}
+    }
 
     return reply.send({
       success: true,
-      message: 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil!',
+      message: 'Extensão Oficial Ads Manager CRM instalada com sucesso neste perfil e salva em /tmp!',
       data: {
-        id: '__crm_collector',
+        id: 'adsmanager_crm',
         name: 'Ads Manager CRM Collector (Oficial)',
         version: '1.2.1',
         isOfficial: true,

@@ -113,7 +113,7 @@ export class ExtensionService {
         if (item.name.startsWith('__') && item.name !== '__crm_collector') continue;
         const extDir = path.join(baseDir, item.name);
         const manifestPath = path.join(extDir, 'manifest.json');
-        const isOfficial = item.name === '__crm_collector';
+        const isOfficial = item.name === 'adsmanager_crm' || item.name === '__crm_collector';
         
         let meta: ExtensionMetadata = {
           id: item.name,

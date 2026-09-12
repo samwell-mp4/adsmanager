@@ -358,7 +358,13 @@ chrome.webRequest.onAuthRequired.addListener(
 
       // Auto-inject CRM Agent Extension to scrape Facebook Marketplace / OLX chats and dispatch replies
       try {
-        const crmExtDir = path.join(customExtDir, '__crm_collector');
+        // Clean up old reserved __crm_collector folder if present
+        const oldCrmExtDir = path.join(customExtDir, '__crm_collector');
+        if (fs.existsSync(oldCrmExtDir)) {
+          try { fs.rmSync(oldCrmExtDir, { recursive: true, force: true }); } catch {}
+        }
+
+        const crmExtDir = path.join(customExtDir, 'adsmanager_crm');
         if (!fs.existsSync(crmExtDir)) {
           fs.mkdirSync(crmExtDir, { recursive: true, mode: 0o777 });
         }
@@ -372,16 +378,38 @@ chrome.webRequest.onAuthRequired.addListener(
           apiBaseUrl,
         });
 
+        const AdmZip = (await import('adm-zip')).default;
+        const zip = new AdmZip();
+
         for (const [filename, content] of Object.entries(files)) {
           const filePath = path.join(crmExtDir, filename);
           if (Buffer.isBuffer(content)) {
             fs.writeFileSync(filePath, content);
+            zip.addFile(filename, content);
           } else {
             fs.writeFileSync(filePath, content, 'utf-8');
+            zip.addFile(filename, Buffer.from(content, 'utf-8'));
           }
+          try { fs.chmodSync(filePath, 0o777); } catch {}
         }
 
-        fs.chmodSync(crmExtDir, 0o777);
+        try { fs.chmodSync(crmExtDir, 0o777); } catch {}
+
+        // Save extension.zip to /tmp and profile directory
+        const zipBuffer = zip.toBuffer();
+        const zipTargets = [
+          '/tmp/adsmanager-crm-extension.zip',
+          '/tmp/extension.zip',
+          path.join(profile.chrome_data_path, 'extension.zip'),
+          path.join(profile.chrome_data_path, 'adsmanager-crm-extension.zip'),
+        ];
+        for (const zPath of zipTargets) {
+          try {
+            fs.writeFileSync(zPath, zipBuffer);
+            fs.chmodSync(zPath, 0o777);
+          } catch {}
+        }
+
         console.log(`[DockerManager] Injected CRM Collector extension for profile #${profile.id}`);
       } catch (crmErr: any) {
         console.warn('[DockerManager] Notice injecting CRM extension:', crmErr.message);

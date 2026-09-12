@@ -154,6 +154,32 @@ async function start() {
     const { crmRoutes } = await import('./routes/crm.routes.js');
     await fastify.register(crmRoutes);
 
+    // Save official CRM extension zip to /tmp for direct host/container access
+    try {
+      const { generateCrmExtensionFiles } = await import('./services/crm-extension-generator.js');
+      const AdmZip = (await import('adm-zip')).default;
+      const files = generateCrmExtensionFiles({ profileId: 1 });
+      const zip = new AdmZip();
+      for (const [filename, content] of Object.entries(files)) {
+        if (Buffer.isBuffer(content)) {
+          zip.addFile(filename, content);
+        } else {
+          zip.addFile(filename, Buffer.from(content, 'utf-8'));
+        }
+      }
+      const zipBuffer = zip.toBuffer();
+      const tmpTargets = ['/tmp/adsmanager-crm-extension.zip', '/tmp/extension.zip'];
+      for (const targetPath of tmpTargets) {
+        try {
+          fs.writeFileSync(targetPath, zipBuffer);
+          fs.chmodSync(targetPath, 0o777);
+          console.log(`[API] Extension zip saved to ${targetPath}`);
+        } catch {}
+      }
+    } catch (zipErr: any) {
+      console.warn('[API] Notice saving extension to /tmp:', zipErr.message);
+    }
+
     console.log('[API] Checking database connection...');
     const isDbConnected = await testDbConnection();
     if (isDbConnected) {
