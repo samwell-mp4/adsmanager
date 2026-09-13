@@ -1681,7 +1681,7 @@ ${quotesList}
     <div className="h-full flex flex-col bg-[#F8FAFC] text-slate-800 overflow-hidden w-full max-w-full font-sans">
       {/* Top Header Controls - Clean White SaaS */}
       <div className={`px-3 sm:px-6 py-2.5 border-b border-slate-200 bg-white items-center justify-between gap-3 shrink-0 shadow-xs ${
-        selectedId !== null && currentTab === 'inbox' ? 'hidden lg:flex' : 'flex flex-wrap'
+        selectedId !== null && currentTab === 'inbox' ? 'hidden lg:flex lg:flex-wrap' : 'flex flex-wrap'
       }`}>
         {/* Left branding & view switcher */}
         <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none">
@@ -2286,7 +2286,7 @@ ${quotesList}
             {activeThread ? (
               <>
                 {/* Thread Header */}
-                <div className="px-3 sm:px-6 py-2 sm:py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs">
+                <div className="px-3 sm:px-6 py-2 sm:py-3 border-b border-slate-200 bg-white flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs">
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     {/* Mobile Back Button (WhatsApp Style) */}
                     <button
