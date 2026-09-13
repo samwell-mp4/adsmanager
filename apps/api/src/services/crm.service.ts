@@ -169,8 +169,8 @@ export class CrmService {
 
     let messages = await crmRepository.getMessagesByConversationId(id, 100);
 
-    // Se for conversa do WhatsApp e ainda tiver poucas mensagens no banco, sincroniza do Evolution API
-    if (conversation.platform === 'whatsapp' && messages.length <= 1) {
+    // Se for conversa do WhatsApp, sincroniza as mensagens mais recentes do Evolution API automaticamente
+    if (conversation.platform === 'whatsapp') {
       try {
         const remoteMessages = await evolutionService.fetchMessages(conversation.external_id, 50);
         if (remoteMessages && remoteMessages.length > 0) {

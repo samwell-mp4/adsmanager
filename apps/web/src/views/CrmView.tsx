@@ -535,13 +535,19 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeThread?.messages]);
 
-  // Periodic polling for new messages (every 5 seconds)
+  // Periodic polling for new messages (every 5 seconds) + automatic WhatsApp sync
   useEffect(() => {
     if (!autoRefresh) return;
+    let ticks = 0;
     const timer = setInterval(() => {
       fetchConversations(true);
       if (selectedId) {
         fetchThread(selectedId, true);
+      }
+      ticks++;
+      // A cada 15s (a cada 3 ciclos de 5s), executa sincronização silenciosa com WhatsApp
+      if (ticks % 3 === 0) {
+        api.syncEvolutionWhatsApp().catch(() => {});
       }
     }, 5000);
     return () => clearInterval(timer);
@@ -767,7 +773,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               <span>Facebook</span>
             </button>
             <button
-              onClick={() => setSelectedPlatform('whatsapp')}
+              onClick={() => {
+                setSelectedPlatform('whatsapp');
+                api.syncEvolutionWhatsApp().then(() => fetchConversations(true)).catch(() => {});
+              }}
               className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'whatsapp' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
             >
               <span>WhatsApp</span>
@@ -922,10 +931,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             onClick={handleSyncWhatsApp}
             disabled={syncingWhatsApp}
             className="px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
-            title="Puxar conversas mais recentes do WhatsApp via Evolution API"
+            title="Sincronização automática ativa via Webhook em tempo real e a cada 15s. Clique para forçar sincronização imediata."
           >
+            <span className="relative flex h-2 w-2 mr-0.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
             <RefreshCw className={`h-3.5 w-3.5 ${syncingWhatsApp ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>{syncingWhatsApp ? 'Sincronizando...' : '⚡ Sincronizar WhatsApp'}</span>
+            <span>{syncingWhatsApp ? 'Sincronizando...' : 'WhatsApp Auto-Sync'}</span>
           </button>
 
 

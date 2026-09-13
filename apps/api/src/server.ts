@@ -14,6 +14,7 @@ import fastifyStatic from '@fastify/static';
 
 import { dockerManager } from './managers/docker.manager.js';
 import httpProxy from 'http-proxy';
+import { evolutionService } from './services/evolution.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -244,6 +245,20 @@ async function start() {
     } catch (e: any) {
       console.log(`[API] Alternate listener setup notice:`, e.message);
     }
+
+    // Background WhatsApp auto-sync interval (runs every 15s continuously)
+    let isAutoSyncingWhatsApp = false;
+    setInterval(async () => {
+      if (isAutoSyncingWhatsApp) return;
+      isAutoSyncingWhatsApp = true;
+      try {
+        await evolutionService.syncWhatsAppChats();
+      } catch (err: any) {
+        // Silent catch to prevent console pollution
+      } finally {
+        isAutoSyncingWhatsApp = false;
+      }
+    }, 15000);
 
     // Listen to upgrade events for websocket proxying (noVNC uses wss)
     fastify.server.on('upgrade', async (req, socket, head) => {

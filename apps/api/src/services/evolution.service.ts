@@ -78,6 +78,9 @@ export class EvolutionService {
       if (data && data.messages && Array.isArray(data.messages.records)) {
         return data.messages.records;
       }
+      if (data && Array.isArray(data.records)) {
+        return data.records;
+      }
       if (Array.isArray(data)) return data;
       return [];
     } catch (err: any) {
@@ -238,14 +241,32 @@ export class EvolutionService {
   async handleWebhook(payload: any): Promise<{ handled: boolean; reason?: string }> {
     if (!payload) return { handled: false, reason: 'Payload vazio' };
 
-    const event = payload.event || payload.type;
+    // Encaminha webhook para o n8n em segundo plano para manter integração ativa
+    const n8nWebhookUrl = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/4f5fd951-9125-4880-8508-e05c32b1082e';
+    fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+
+    const event = (payload.event || payload.type || '').toLowerCase();
     const data = payload.data || payload;
 
     // Monitorar eventos de mensagens recebidas ou enviadas
-    if (event === 'messages.upsert' || event === 'MESSAGES_UPSERT' || payload.message) {
-      const msgRecord = data.message || (Array.isArray(data.messages) ? data.messages[0] : data);
+    if (event.includes('messages') || event.includes('upsert') || payload.message || data?.key) {
+      let msgRecord: any = data;
+      if (Array.isArray(data?.messages) && data.messages.length > 0) {
+        msgRecord = data.messages[0];
+      } else if (data?.data?.key) {
+        msgRecord = data.data;
+      } else if (data?.key) {
+        msgRecord = data;
+      } else if (data?.message?.key) {
+        msgRecord = data.message;
+      }
+
       if (!msgRecord || !msgRecord.key) {
-        return { handled: false, reason: 'Registro de mensagem inválido' };
+        return { handled: false, reason: 'Registro de mensagem sem chave válida' };
       }
 
       const remoteJid = msgRecord.key.remoteJid;
@@ -256,7 +277,7 @@ export class EvolutionService {
       const isMe = Boolean(msgRecord.key.fromMe);
       const pushName = msgRecord.pushName || data.pushName;
       const phone = remoteJid.replace(/@.*$/, '').replace(/\D/g, '');
-      const customerName = pushName || `WhatsApp (${phone})`;
+      const customerName = pushName || (phone ? `WhatsApp (${phone})` : 'Contato WhatsApp');
 
       const msgObj = msgRecord.message || {};
       const messageText =
@@ -300,6 +321,7 @@ export class EvolutionService {
           external_id: msgRecord.key.id,
         });
 
+        console.log(`[Evolution Webhook] Nova mensagem processada em tempo real para conversa #${conv.id} (${remoteJid})`);
         return { handled: true };
       }
     }
