@@ -37,3 +37,10 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
 }
+
+/* Previne o zoom automático do iPhone em inputs/selects/textareas menores que 16px */
+@media screen and (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
