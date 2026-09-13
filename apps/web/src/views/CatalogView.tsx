@@ -267,7 +267,14 @@ export const CatalogView: React.FC = () => {
       }
 
       setIsModalOpen(false);
-      await fetchData();
+      try {
+        const prodsRes = await api.getCatalogProducts({ limit: 200 });
+        if (prodsRes.products && prodsRes.products.length > 0) {
+          setProducts(prodsRes.products);
+        }
+      } catch (e) {
+        console.warn('Erro ao recarregar produtos:', e);
+      }
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       const errMsg = err.message || 'Erro ao salvar produto no catálogo.';

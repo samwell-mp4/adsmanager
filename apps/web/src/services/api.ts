@@ -606,18 +606,34 @@ export const api = {
     if (options?.limit) query.set('limit', String(options.limit));
 
     const res = await fetch(`${API_BASE}/catalog/products?${query.toString()}`);
-    const json = await handleResponse<any>(res);
+    let rawJson: any;
+    try {
+      rawJson = await res.json();
+    } catch {
+      rawJson = {};
+    }
+    if (!res.ok || rawJson.success === false) {
+      const message = typeof rawJson.error === 'string'
+        ? rawJson.error
+        : (rawJson.error?.message || rawJson.message || 'Erro ao carregar produtos do catálogo');
+      throw new Error(message);
+    }
+
+    const products = Array.isArray(rawJson.data)
+      ? rawJson.data
+      : (Array.isArray(rawJson) ? rawJson : (Array.isArray(rawJson.products) ? rawJson.products : []));
+
     return {
-      products: Array.isArray(json?.data) ? json.data : [],
-      total: json?.meta?.total || 0,
-      pages: json?.meta?.pages || 1,
+      products,
+      total: rawJson.meta?.total !== undefined ? rawJson.meta.total : products.length,
+      pages: rawJson.meta?.pages || 1,
     };
   },
 
   async getCatalogProduct(id: number): Promise<any> {
     const res = await fetch(`${API_BASE}/catalog/products/${id}`);
-    const json = await handleResponse<any>(res);
-    return json?.data || null;
+    const data = await handleResponse<any>(res);
+    return data?.data !== undefined ? data.data : data;
   },
 
   async createCatalogProduct(data: any): Promise<any> {
