@@ -582,7 +582,7 @@ async function pollOutgoingQueue() {
     if (pendingReplies.length > 0) {
       console.log('[CRM Background] ' + pendingReplies.length + ' outgoing replies pending.');
 
-      chrome.tabs.query({ url: ["*://*.facebook.com/*", "*://*.olx.com.br/*"] }, (tabs) => {
+      chrome.tabs.query({ url: ["*://*.facebook.com/*", "*://*.instagram.com/*", "*://*.olx.com.br/*"] }, (tabs) => {
         if (!tabs || tabs.length === 0) return;
         const targetTab = tabs[0];
 
@@ -1097,7 +1097,129 @@ function scrapeOlx() {
   return conversations;
 }
 
-// 4. Executador Principal da Varredura
+// 4. Parser do Instagram Direct (instagram.com/direct/inbox/ e /direct/t/*)
+function scrapeInstagram() {
+  const conversations = [];
+  const seenIds = new Set();
+  const threadLinks = Array.from(document.querySelectorAll('a[href*="/direct/t/"]'));
+
+  for (let i = 0; i < threadLinks.length; i++) {
+    const link = threadLinks[i];
+    try {
+      const href = link.getAttribute('href') || '';
+      const match = href.match(/\\/direct\\/t\\/([^/?#]+)/);
+      if (!match) continue;
+
+      const threadId = match[1];
+      if (seenIds.has(threadId)) continue;
+      seenIds.add(threadId);
+
+      let customerName = 'Usuário Instagram';
+      const spans = Array.from(link.querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
+      if (spans.length > 0) {
+        const nameCandidate = spans.find(s => !s.match(/^\\d+\\s*(m|h|d|sem|s)$/i) && !s.toLowerCase().includes('ativo'));
+        if (nameCandidate) customerName = nameCandidate;
+      }
+
+      const img = link.querySelector('img');
+      const customerAvatar = img ? img.src : null;
+
+      let lastMessage = '';
+      let rawTimeStr = '';
+
+      for (const text of spans) {
+        if (text.match(/(?:·|-|\\s|^)(\\d+)\\s*(s|seg|min|m|h|hora|horas|d|dia|dias|sem|semana|semanas|mês|mes|meses|a|ano|anos)(?:\\b|$)/i)) {
+          rawTimeStr = text;
+        } else if (text !== customerName && text.length > 1 && !text.toLowerCase().includes('ativo')) {
+          lastMessage = text;
+        }
+      }
+
+      const isUnread = Boolean(
+        link.querySelector('[aria-label*="não lida"], [aria-label*="unread"]') ||
+        link.innerHTML.includes('background-color: rgb(0, 149, 246)') ||
+        link.innerHTML.includes('rgb(0, 149, 246)')
+      );
+
+      conversations.push({
+        external_id: threadId,
+        customer_name: customerName,
+        customer_avatar: customerAvatar,
+        last_message: lastMessage,
+        last_message_at: new Date().toISOString(),
+        unread: isUnread,
+        messages: []
+      });
+    } catch (e) {}
+  }
+
+  const currentUrl = location.href;
+  const matchCurrent = currentUrl.match(/\\/direct\\/t\\/([^/?#]+)/);
+  const activeThreadId = matchCurrent ? matchCurrent[1] : null;
+
+  if (activeThreadId) {
+    let activeConv = conversations.find(c => c.external_id === activeThreadId);
+    const headerTitleEl = document.querySelector('div[role="main"] h2, div[role="main"] h1, div[role="main"] header span');
+    const headerName = headerTitleEl ? headerTitleEl.textContent.trim() : null;
+
+    if (!activeConv) {
+      activeConv = {
+        external_id: activeThreadId,
+        customer_name: headerName || 'Usuário Instagram',
+        customer_avatar: null,
+        last_message: '',
+        last_message_at: new Date().toISOString(),
+        messages: []
+      };
+      conversations.push(activeConv);
+    } else if (headerName && activeConv.customer_name === 'Usuário Instagram') {
+      activeConv.customer_name = headerName;
+    }
+
+    try {
+      const msgElements = Array.from(document.querySelectorAll('div[role="main"] div[dir="auto"], div[role="main"] span[dir="auto"]'));
+      const parsedMessages = [];
+
+      for (const el of msgElements) {
+        const text = el.textContent.trim();
+        if (!text || text.length === 0) continue;
+
+        const lower = text.toLowerCase();
+        if (
+          lower === 'detalhes' ||
+          lower === 'informações' ||
+          lower.includes('chamada de vídeo') ||
+          lower.includes('chamada de áudio') ||
+          lower.includes('ativo há') ||
+          lower.includes('ativo(a) agora')
+        ) {
+          continue;
+        }
+
+        let isMe = false;
+        const rect = el.getBoundingClientRect();
+        if (rect.right > window.innerWidth * 0.58) {
+          isMe = true;
+        }
+
+        parsedMessages.push({
+          sender_type: isMe ? 'me' : 'customer',
+          content: text,
+          sent_at: new Date().toISOString()
+        });
+      }
+
+      activeConv.messages = parsedMessages.slice(-30);
+      if (activeConv.messages.length > 0 && !activeConv.last_message) {
+        activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
+      }
+    } catch (e) {}
+  }
+
+  return conversations;
+}
+
+// 5. Executador Principal da Varredura
 function scrapeActiveChats() {
   if (isScraping) return [];
   isScraping = true;
@@ -1106,18 +1228,24 @@ function scrapeActiveChats() {
     injectFloatingActionBadge();
     const host = location.hostname;
     let conversations = [];
+    let platform = 'facebook';
 
     if (host.includes('facebook.com')) {
       conversations = scrapeFacebook();
+      platform = 'facebook';
+    } else if (host.includes('instagram.com')) {
+      conversations = scrapeInstagram();
+      platform = 'instagram';
     } else if (host.includes('olx.com.br')) {
       conversations = scrapeOlx();
+      platform = 'olx';
     }
 
     if (conversations && conversations.length > 0) {
-      console.log('[CRM Content] Found ' + conversations.length + ' conversations. Dispatching to background...');
+      console.log('[CRM Content] Found ' + conversations.length + ' conversations on ' + platform + '. Dispatching to background...');
       chrome.runtime.sendMessage({
         type: 'CRM_SYNC_DATA',
-        platform: host.includes('facebook.com') ? 'facebook' : 'olx',
+        platform: platform,
         conversations: conversations
       }, (res) => {
         const countEl = document.getElementById('crm-floater-count');
@@ -1137,7 +1265,7 @@ function scrapeActiveChats() {
   }
 }
 
-// 5. Escutar mensagens do Popup e Background
+// 6. Escutar mensagens do Popup e Background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request && request.type === 'TRIGGER_SCRAPE_NOW') {
     const convs = scrapeActiveChats();
@@ -1183,7 +1311,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// 6. Varredura Periódica e Monitor de Mudança de Página
+// 7. Varredura Periódica e Monitor de Mudança de Página
 setInterval(scrapeActiveChats, 8000);
 setTimeout(scrapeActiveChats, 1500);
 
@@ -1205,15 +1333,46 @@ if (document.body) {
 `;
 
   let finalContentJs = contentJs;
-  const candidatePaths = [
-    path.resolve(process.cwd(), 'crm-extension', 'content.js'),
-    path.resolve(process.cwd(), '..', 'crm-extension', 'content.js'),
-    path.resolve(process.cwd(), '..', '..', 'crm-extension', 'content.js'),
+  let finalBackgroundJs = backgroundJs;
+  let finalPopupJs = popupJs;
+  let finalPopupHtml = popupHtml;
+
+  const candidateDirs = [
+    path.resolve(process.cwd(), 'crm-extension'),
+    path.resolve(process.cwd(), '..', 'crm-extension'),
+    path.resolve(process.cwd(), '..', '..', 'crm-extension'),
+    '/app/crm-extension',
+    '/app/browser-manager/crm-extension',
   ];
-  for (const cp of candidatePaths) {
-    if (fs.existsSync(cp)) {
+
+  for (const cDir of candidateDirs) {
+    const cContentPath = path.join(cDir, 'content.js');
+    if (fs.existsSync(cContentPath)) {
       try {
-        finalContentJs = fs.readFileSync(cp, 'utf8');
+        finalContentJs = fs.readFileSync(cContentPath, 'utf8');
+
+        const cBgPath = path.join(cDir, 'background.js');
+        if (fs.existsSync(cBgPath)) {
+          let bgRaw = fs.readFileSync(cBgPath, 'utf8');
+          bgRaw = bgRaw.replace(/let currentProfileId\s*=\s*\d+;/, `let currentProfileId = ${profileId};`);
+          bgRaw = bgRaw.replace(/let currentProfileUuid\s*=\s*['"][^'"]*['"];/, `let currentProfileUuid = ${JSON.stringify(profileUuid)};`);
+          if (apiBaseUrl) {
+            bgRaw = bgRaw.replace(/const defaultAdsManagerUrl\s*=\s*['"][^'"]*['"];/, `const defaultAdsManagerUrl = ${JSON.stringify(apiBaseUrl)};`);
+          }
+          finalBackgroundJs = bgRaw;
+        }
+
+        const cPopupPath = path.join(cDir, 'popup.html');
+        if (fs.existsSync(cPopupPath)) {
+          finalPopupHtml = fs.readFileSync(cPopupPath, 'utf8');
+        }
+
+        const cPopupJsPath = path.join(cDir, 'popup.js');
+        if (fs.existsSync(cPopupJsPath)) {
+          let popupRaw = fs.readFileSync(cPopupJsPath, 'utf8');
+          popupRaw = popupRaw.replace(/profileIdInput\.value\s*=\s*res\.profileId\s*\|\|\s*\d+;/, `profileIdInput.value = res.profileId || ${profileId};`);
+          finalPopupJs = popupRaw;
+        }
         break;
       } catch (e) {}
     }
@@ -1223,9 +1382,9 @@ if (document.body) {
 
   return {
     'manifest.json': JSON.stringify(manifest, null, 2),
-    'popup.html': popupHtml,
-    'popup.js': popupJs,
-    'background.js': backgroundJs,
+    'popup.html': finalPopupHtml,
+    'popup.js': finalPopupJs,
+    'background.js': finalBackgroundJs,
     'content.js': finalContentJs,
     'icon16.png': iconBuffer,
     'icon48.png': iconBuffer,

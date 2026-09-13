@@ -130,7 +130,7 @@ async function pollOutgoingQueue() {
     if (pendingReplies.length > 0) {
       console.log('[CRM Background] ' + pendingReplies.length + ' outgoing replies pending.');
 
-      chrome.tabs.query({ url: ["*://*.facebook.com/*", "*://*.olx.com.br/*"] }, (tabs) => {
+      chrome.tabs.query({ url: ["*://*.facebook.com/*", "*://*.instagram.com/*", "*://*.olx.com.br/*"] }, (tabs) => {
         if (!tabs || tabs.length === 0) return;
         const targetTab = tabs[0];
 

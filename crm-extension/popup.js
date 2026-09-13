@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 2. Disparar Varredura Manual
   syncNowBtn.addEventListener('click', () => {
-    setStatus('🔍 Varrendo mensagens na página do Facebook/OLX...', '#38bdf8');
+    setStatus('🔍 Varrendo mensagens no Facebook, Instagram Direct ou OLX...', '#38bdf8');
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs || !tabs[0]) {
@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const activeTab = tabs[0];
       chrome.tabs.sendMessage(activeTab.id, { type: 'TRIGGER_SCRAPE_NOW' }, (response) => {
         if (chrome.runtime.lastError) {
-          setStatus('⚠️ Abra o Facebook Messenger (/messages) ou OLX na aba ativa.', '#fbbf24');
+          setStatus('⚠️ Abra o Facebook Messenger, Instagram (/direct/inbox/) ou OLX na aba ativa.', '#fbbf24');
           return;
         }
 

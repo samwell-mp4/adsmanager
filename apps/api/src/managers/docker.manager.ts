@@ -423,17 +423,19 @@ export class DockerManager {
   }
 
   /**
-   * Injects a zip file directly into the container's custom_extensions and Desktop
+   * Injects a zip file directly into the container's external extensions and Desktop
    */
   async injectZipIntoContainer(containerName: string, extFolderName: string, zipBase64: string): Promise<boolean> {
     try {
       const script = `
-mkdir -p /home/browser/profile/custom_extensions/${extFolderName} /home/browser/Desktop/${extFolderName} /home/browser/Downloads/${extFolderName} /tmp
+mkdir -p /opt/extensions/${extFolderName} /home/browser/extensions/${extFolderName} /home/browser/profile/custom_extensions/${extFolderName} /home/browser/Desktop/${extFolderName} /home/browser/Downloads/${extFolderName} /tmp
 echo "${zipBase64}" | base64 -d > /tmp/injected_${extFolderName}.zip
-unzip -o -q /tmp/injected_${extFolderName}.zip -d /home/browser/profile/custom_extensions/${extFolderName}
-cp -rf /home/browser/profile/custom_extensions/${extFolderName}/* /home/browser/Desktop/${extFolderName}/ 2>/dev/null || true
-cp -rf /home/browser/profile/custom_extensions/${extFolderName}/* /home/browser/Downloads/${extFolderName}/ 2>/dev/null || true
-chmod -R 777 /home/browser/profile/custom_extensions /home/browser/Desktop /home/browser/Downloads
+unzip -o -q /tmp/injected_${extFolderName}.zip -d /opt/extensions/${extFolderName}
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/extensions/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/profile/custom_extensions/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/Desktop/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/Downloads/${extFolderName}/ 2>/dev/null || true
+chmod -R 777 /opt/extensions /home/browser/extensions /home/browser/profile/custom_extensions /home/browser/Desktop /home/browser/Downloads
 rm -f /tmp/injected_${extFolderName}.zip
 `;
       return await this.execInContainer(containerName, ['bash', '-c', script]);

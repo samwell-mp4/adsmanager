@@ -74,8 +74,18 @@ cleanup() {
 trap cleanup SIGTERM SIGINT SIGHUP
 
 # 6. Prepare convenience directories and clean legacy extensions
-mkdir -p /home/browser/Desktop /home/browser/Downloads /home/browser/profile/custom_extensions /root/Desktop /root/Downloads
+mkdir -p /home/browser/Desktop /home/browser/Downloads /home/browser/profile/custom_extensions /root/Desktop /root/Downloads /opt/extensions /home/browser/extensions
 rm -rf /home/browser/profile/custom_extensions/__* 2>/dev/null || true
+
+# Chrome Enterprise / Managed Policy to permanently allow all extensions and enable dev tools
+mkdir -p /etc/opt/chrome/policies/managed
+cat << 'EOF' > /etc/opt/chrome/policies/managed/adsmanager_policy.json
+{
+  "ExtensionInstallAllowlist": ["*"],
+  "DeveloperToolsAvailability": 1
+}
+EOF
+chmod 644 /etc/opt/chrome/policies/managed/adsmanager_policy.json 2>/dev/null || true
 
 # Auto-unzip any .zip files present in profile or custom_extensions
 if [ -d "/home/browser/profile/custom_extensions" ]; then
@@ -91,7 +101,12 @@ if [ -d "/home/browser/profile/custom_extensions" ]; then
     done
 fi
 
-# Mirror adsmanager_crm to Desktop and Downloads for easy 1-click selection in file chooser
+# Mirror extensions to /opt/extensions (OUTSIDE user-data-dir) and Desktop/Downloads
+if [ -d "/home/browser/profile/custom_extensions" ]; then
+    cp -rf /home/browser/profile/custom_extensions/* /opt/extensions/ 2>/dev/null || true
+    cp -rf /home/browser/profile/custom_extensions/* /home/browser/extensions/ 2>/dev/null || true
+fi
+
 if [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ]; then
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Downloads/adsmanager_crm 2>/dev/null || true
@@ -99,8 +114,8 @@ if [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ]; then
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /root/Downloads/adsmanager_crm 2>/dev/null || true
 fi
 
-chown -R browser:browser /home/browser 2>/dev/null || true
-chmod -R 777 /home/browser /root /tmp/runtime 2>/dev/null || true
+chown -R browser:browser /home/browser /opt/extensions 2>/dev/null || true
+chmod -R 777 /home/browser /root /tmp/runtime /opt/extensions 2>/dev/null || true
 
 # 7. Start Google Chrome Stable with Supervision Loop (prevents container shutdown on Chrome crash or SingletonLock)
 while true; do
@@ -108,35 +123,35 @@ while true; do
     rm -rf /home/browser/profile/Singleton* 2>/dev/null || true
     rm -rf /home/browser/profile/*Lock* 2>/dev/null || true
 
-    # Dynamically scan custom extensions on each Chrome launch / supervisor restart
-    CUSTOM_EXTS=""
+    # Prepare external extensions directory OUTSIDE user-data-dir
+    # (Chromium strictly blocks loading unpacked extensions located inside its own user-data-dir!)
+    mkdir -p /opt/extensions /home/browser/extensions
     if [ -d "/home/browser/profile/custom_extensions" ]; then
-        # Ensure adsmanager_crm is copied to Desktop
-        if [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ]; then
-            cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
-            cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Downloads/adsmanager_crm 2>/dev/null || true
-        fi
-
-        for ext_dir in /home/browser/profile/custom_extensions/*; do
-            base_name=$(basename "$ext_dir")
-            case "$base_name" in
-                _*|.*) continue ;; # Ignore reserved directories starting with _ or .
-            esac
-            if [ -d "$ext_dir" ] && [ -f "$ext_dir/manifest.json" ]; then
-                echo "[browser-container] Found extension: $ext_dir"
-                if [ -z "$CUSTOM_EXTS" ]; then
-                    CUSTOM_EXTS="$ext_dir"
-                else
-                    CUSTOM_EXTS="$CUSTOM_EXTS,$ext_dir"
-                fi
-            fi
-        done
+        cp -rf /home/browser/profile/custom_extensions/* /opt/extensions/ 2>/dev/null || true
+        cp -rf /home/browser/profile/custom_extensions/* /home/browser/extensions/ 2>/dev/null || true
+        [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ] && cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
     fi
+
+    CUSTOM_EXTS=""
+    for ext_dir in /opt/extensions/*; do
+        base_name=$(basename "$ext_dir")
+        case "$base_name" in
+            _*|.*) continue ;; # Ignore reserved directories starting with _ or .
+        esac
+        if [ -d "$ext_dir" ] && [ -f "$ext_dir/manifest.json" ]; then
+            echo "[browser-container] Found extension outside user-data-dir: $ext_dir"
+            if [ -z "$CUSTOM_EXTS" ]; then
+                CUSTOM_EXTS="$ext_dir"
+            else
+                CUSTOM_EXTS="$CUSTOM_EXTS,$ext_dir"
+            fi
+        fi
+    done
 
     LOAD_EXT_FLAG=""
     if [ -n "$CUSTOM_EXTS" ]; then
         echo "[browser-container] Enabling extensions: $CUSTOM_EXTS"
-        LOAD_EXT_FLAG="--load-extension=$CUSTOM_EXTS"
+        LOAD_EXT_FLAG="--load-extension=$CUSTOM_EXTS --disable-extensions-except=$CUSTOM_EXTS"
     fi
 
     echo "[browser-container] Starting Google Chrome with flags..."
