@@ -754,7 +754,66 @@ export const api = {
     });
     return handleResponse<any>(res);
   },
+
+  // ==========================================
+  // MELHOR ENVIO / CÁLCULO DE FRETES
+  // ==========================================
+
+  async getShippingConfig(): Promise<{
+    default_origin_cep: string;
+    preset_origins: Array<{ id: string; label: string; cep: string; formatted_cep: string }>;
+    default_dimensions: { height: number; width: number; length: number; weight: number };
+  }> {
+    const res = await fetch(`${API_BASE}/shipping/config`);
+    const json = await handleResponse<any>(res);
+    return json.config;
+  },
+
+  async calculateShipping(data: {
+    from_postal_code?: string;
+    to_postal_code: string;
+    products?: Array<{
+      id?: string;
+      name?: string;
+      width?: number;
+      height?: number;
+      length?: number;
+      weight?: number;
+      insurance_value?: number;
+      quantity?: number;
+    }>;
+    default_dimensions?: {
+      height?: number;
+      width?: number;
+      length?: number;
+      weight?: number;
+    };
+  }): Promise<{
+    success: boolean;
+    from_postal_code: string;
+    to_postal_code: string;
+    quotes_count: number;
+    quotes: Array<{
+      id: number;
+      name: string;
+      company: { id: number; name: string; picture: string };
+      price: number;
+      custom_price: number;
+      delivery_time: number;
+      custom_delivery_time: number;
+      currency: string;
+    }>;
+    unavailable: Array<{ name: string; company: string; reason: string }>;
+  }> {
+    const res = await fetch(`${API_BASE}/shipping/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
 };
+
 
 
 

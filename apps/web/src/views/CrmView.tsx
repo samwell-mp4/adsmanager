@@ -41,6 +41,7 @@ import {
   Copy,
   Image as ImageIcon,
   Layers,
+  Truck,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -94,6 +95,12 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     installments: number;
     notes: string;
     send_whatsapp: boolean;
+    origin_cep: string;
+    destination_cep: string;
+    package_height: number;
+    package_width: number;
+    package_length: number;
+    package_weight: number;
     items: Array<{
       product_id: number | null;
       product_name: string;
@@ -114,10 +121,33 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     installments: 6,
     notes: '',
     send_whatsapp: true,
+    origin_cep: '30730130',
+    destination_cep: '',
+    package_height: 1,
+    package_width: 10,
+    package_length: 15,
+    package_weight: 0.5,
     items: [
       { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0 }
     ]
   });
+
+  // Calculadora de Fretes (Melhor Envio) States
+  const [shippingLoading, setShippingLoading] = useState<boolean>(false);
+  const [shippingQuotes, setShippingQuotes] = useState<any[]>([]);
+  const [shippingError, setShippingError] = useState<string | null>(null);
+  const [showShippingModal, setShowShippingModal] = useState<boolean>(false);
+  const [shippingModalCep, setShippingModalCep] = useState<string>('');
+  const [shippingModalOrigin, setShippingModalOrigin] = useState<string>('30730130');
+  const [shippingModalCustomOrigin, setShippingModalCustomOrigin] = useState<string>('');
+  const [shippingModalHeight, setShippingModalHeight] = useState<number>(1);
+  const [shippingModalWidth, setShippingModalWidth] = useState<number>(10);
+  const [shippingModalLength, setShippingModalLength] = useState<number>(15);
+  const [shippingModalWeight, setShippingModalWeight] = useState<number>(0.5);
+  const [shippingModalQuotes, setShippingModalQuotes] = useState<any[]>([]);
+  const [shippingModalLoading, setShippingModalLoading] = useState<boolean>(false);
+  const [shippingModalError, setShippingModalError] = useState<string | null>(null);
+  const [showDimensionsDrawer, setShowDimensionsDrawer] = useState<boolean>(false);
 
   // Omnichannel Catalog States (Fase 4)
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
@@ -1046,12 +1076,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       };
     }
 
+    const fullAddress = [conv.customer_address, conv.customer_city, conv.customer_state].filter(Boolean).join(' - ');
+    const cepMatch = fullAddress.match(/\b\d{5}-?\d{3}\b/);
+    const detectedCep = cepMatch ? cepMatch[0].replace(/\D/g, '') : '';
+
     setOrderForm({
       customer_name: conv.customer_name || '',
       customer_cpf: conv.custom_fields?.cpf || '',
       customer_email: conv.customer_email || '',
       customer_phone: conv.customer_phone || '',
-      delivery_address: [conv.customer_address, conv.customer_city, conv.customer_state].filter(Boolean).join(' - '),
+      delivery_address: fullAddress,
       delivery_method: 'uber_flash',
       shipping_fee: 0,
       discount: 0,
@@ -1059,9 +1093,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       installments: 6,
       notes: '',
       send_whatsapp: true,
+      origin_cep: '30730130',
+      destination_cep: detectedCep,
+      package_height: 1,
+      package_width: 10,
+      package_length: 15,
+      package_weight: 0.5,
       items: [initialItem]
     });
 
+    setShippingQuotes([]);
+    setShippingError(null);
     setShowOrderModal(true);
   };
 
@@ -1256,6 +1298,171 @@ Instagram: @SNACKSTOREBH`;
     const text = generateReceiptText(order);
     await handleSendReply(text);
     setFeedback({ type: 'success', message: 'Recibo reenviado no WhatsApp com sucesso!' });
+  };
+
+  // ==========================================
+  // MELHOR ENVIO / CÁLCULO DE FRETE HANDLERS
+  // ==========================================
+
+  const handleCalculateOrderShipping = async () => {
+    let cepDestino = (orderForm.destination_cep || '').replace(/\D/g, '');
+    if (!cepDestino) {
+      const match = (orderForm.delivery_address || '').match(/\b\d{5}-?\d{3}\b/);
+      if (match) {
+        cepDestino = match[0].replace(/\D/g, '');
+        setOrderForm(prev => ({ ...prev, destination_cep: cepDestino }));
+      }
+    }
+
+    if (!cepDestino || cepDestino.length !== 8) {
+      setShippingError('Informe um CEP de destino válido com 8 dígitos para calcular o frete');
+      return;
+    }
+
+    setShippingLoading(true);
+    setShippingError(null);
+
+    try {
+      const res = await api.calculateShipping({
+        from_postal_code: orderForm.origin_cep || '30730130',
+        to_postal_code: cepDestino,
+        default_dimensions: {
+          height: Number(orderForm.package_height) || 1,
+          width: Number(orderForm.package_width) || 10,
+          length: Number(orderForm.package_length) || 15,
+          weight: Number(orderForm.package_weight) || 0.5,
+        },
+        products: orderForm.items.map((it, idx) => ({
+          id: `item-${idx + 1}`,
+          name: it.product_name || 'Produto',
+          width: Number(orderForm.package_width) || 10,
+          height: Number(orderForm.package_height) || 1,
+          length: Number(orderForm.package_length) || 15,
+          weight: Number(orderForm.package_weight) || 0.5,
+          insurance_value: Math.max(10, it.unit_price || 50),
+          quantity: Math.max(1, it.quantity || 1)
+        }))
+      });
+
+      if (res.quotes && res.quotes.length > 0) {
+        setShippingQuotes(res.quotes);
+      } else {
+        setShippingQuotes([]);
+        setShippingError('Nenhuma opção de frete disponível para este CEP no momento.');
+      }
+    } catch (err: any) {
+      setShippingError(err.message || 'Falha ao calcular frete no Melhor Envio');
+      setShippingQuotes([]);
+    } finally {
+      setShippingLoading(false);
+    }
+  };
+
+  const handleApplyShippingQuote = (quote: any) => {
+    const isCorreios = quote.company?.name?.toLowerCase().includes('correios');
+    const method = isCorreios ? 'correios' : 'outro';
+    const carrierName = `${quote.company?.name} (${quote.name})`;
+    setOrderForm(prev => ({
+      ...prev,
+      shipping_fee: Number(quote.custom_price || quote.price || 0),
+      delivery_method: method,
+      notes: prev.notes ? `${prev.notes} | Frete: ${carrierName}` : `Frete via ${carrierName} (Prazo: ${quote.custom_delivery_time} dias úteis)`
+    }));
+    setFeedback({
+      type: 'success',
+      message: `Frete ${carrierName} de R$ ${Number(quote.custom_price).toFixed(2).replace('.', ',')} aplicado com sucesso!`
+    });
+  };
+
+  const handleOpenShippingQuickModal = () => {
+    if (!activeThread?.conversation) return;
+    const conv = activeThread.conversation;
+    const addr = [conv.customer_address, conv.customer_city, conv.customer_state].filter(Boolean).join(' ');
+    const match = addr.match(/\b\d{5}-?\d{3}\b/);
+    const cep = match ? match[0].replace(/\D/g, '') : '';
+    setShippingModalCep(cep);
+    setShippingModalOrigin('30730130');
+    setShippingModalCustomOrigin('');
+    setShippingModalHeight(1);
+    setShippingModalWidth(10);
+    setShippingModalLength(15);
+    setShippingModalWeight(0.5);
+    setShippingModalQuotes([]);
+    setShippingModalError(null);
+    setShowShippingModal(true);
+  };
+
+  const handleCalculateModalShipping = async () => {
+    const cepDestino = (shippingModalCep || '').replace(/\D/g, '');
+    if (!cepDestino || cepDestino.length !== 8) {
+      setShippingModalError('Informe um CEP de destino válido com 8 dígitos');
+      return;
+    }
+
+    const cepOrigem = shippingModalOrigin === 'custom' 
+      ? (shippingModalCustomOrigin || '').replace(/\D/g, '') 
+      : shippingModalOrigin;
+
+    if (!cepOrigem || cepOrigem.length !== 8) {
+      setShippingModalError('Informe um CEP de origem válido com 8 dígitos');
+      return;
+    }
+
+    setShippingModalLoading(true);
+    setShippingModalError(null);
+
+    try {
+      const res = await api.calculateShipping({
+        from_postal_code: cepOrigem,
+        to_postal_code: cepDestino,
+        default_dimensions: {
+          height: Number(shippingModalHeight) || 1,
+          width: Number(shippingModalWidth) || 10,
+          length: Number(shippingModalLength) || 15,
+          weight: Number(shippingModalWeight) || 0.5,
+        }
+      });
+
+      if (res.quotes && res.quotes.length > 0) {
+        setShippingModalQuotes(res.quotes);
+      } else {
+        setShippingModalQuotes([]);
+        setShippingModalError('Nenhuma opção de frete encontrada para este CEP');
+      }
+    } catch (err: any) {
+      setShippingModalError(err.message || 'Erro ao calcular frete no Melhor Envio');
+      setShippingModalQuotes([]);
+    } finally {
+      setShippingModalLoading(false);
+    }
+  };
+
+  const handleSendShippingQuoteToChat = async () => {
+    if (!selectedId || shippingModalQuotes.length === 0) return;
+    const formattedCep = shippingModalCep.replace(/(\d{5})(\d{3})/, '$1-$2');
+    
+    let originName = 'Padre Eustáquio / BH';
+    if (shippingModalOrigin === '30110017') originName = 'Savassi / BH';
+    else if (shippingModalOrigin === '30190110') originName = 'Savannah Mall (Barro Preto) / BH';
+    else if (shippingModalOrigin === 'custom') originName = shippingModalCustomOrigin;
+
+    const topQuotes = shippingModalQuotes.slice(0, 5);
+    const quotesList = topQuotes.map(q => {
+      const priceFmt = Number(q.custom_price || q.price).toFixed(2).replace('.', ',');
+      const days = q.custom_delivery_time || q.delivery_time;
+      return `• *${q.company.name} (${q.name})*: R$ ${priceFmt} (${days} dia${days !== 1 ? 's' : ''} úteis)`;
+    }).join('\n');
+
+    const messageText = `📦 *Opções de Frete para seu CEP ${formattedCep}:*
+
+${quotesList}
+
+📍 *Saída*: ${originName}
+✨ Deseja que eu já prepare a sua comanda com alguma dessas opções?`;
+
+    await handleSendReply(messageText);
+    setFeedback({ type: 'success', message: 'Cotação de frete enviada no chat com sucesso!' });
+    setShowShippingModal(false);
   };
 
   // Update lead status
@@ -2385,6 +2592,14 @@ Instagram: @SNACKSTOREBH`;
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Etapa Comercial:</span>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={handleOpenShippingQuickModal}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      title="Cotar Fretes no Melhor Envio e Enviar no Chat"
+                    >
+                      <Truck className="h-3 w-3 text-blue-600" />
+                      <span>Cotar Frete</span>
+                    </button>
+                    <button
                       onClick={() => handleOpenCreateOrder()}
                       className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1.5 shadow-xs"
                       title="Abrir Novo Pedido / Comanda para este cliente"
@@ -2738,6 +2953,16 @@ Instagram: @SNACKSTOREBH`;
                             <span className="text-slate-600">{activeThread.conversation.customer_address}</span>
                           </div>
                         )}
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={handleOpenShippingQuickModal}
+                            className="w-full py-1.5 px-3 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            <Truck className="h-3.5 w-3.5 text-blue-600" />
+                            <span>Cotar Fretes (Melhor Envio)</span>
+                          </button>
+                        </div>
                         <div>
                           <span className="text-[10px] text-slate-400 block">Primeiro Contato</span>
                           <span className="text-slate-600">
@@ -5462,13 +5687,20 @@ Instagram: @SNACKSTOREBH`;
 
               {/* Section 3: Logística & Pagamento */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Logística */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                  <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px]">
-                    <MapPin className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Modo de Entrega</span>
+                {/* Logística & Frete Automático */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px]">
+                      <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Modo de Entrega & Frete</span>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                      Melhor Envio Oficial
+                    </span>
                   </div>
+
                   <div>
+                    <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Método de Envio</label>
                     <select
                       value={orderForm.delivery_method}
                       onChange={(e: any) => setOrderForm({ ...orderForm, delivery_method: e.target.value })}
@@ -5477,12 +5709,171 @@ Instagram: @SNACKSTOREBH`;
                       <option value="uber_flash">Uber Flash</option>
                       <option value="motoboy">Motoboy Express (BH e Região)</option>
                       <option value="retirada">Retirada Pessoalmente (Loja Física - Sala 55)</option>
-                      <option value="correios">Correios / Transportadora</option>
-                      <option value="outro">Outro / A Combinar</option>
+                      <option value="correios">Correios (SEDEX / PAC)</option>
+                      <option value="outro">Transportadora (Loggi, Jadlog, etc.)</option>
                     </select>
                   </div>
+
+                  {/* Automated Shipping Calculator Box */}
+                  <div className="p-3 rounded-xl bg-white border border-blue-100 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                        <Package className="h-3.5 w-3.5 text-blue-600" />
+                        Cálculo Automático de Frete
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowDimensionsDrawer(!showDimensionsDrawer)}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                      >
+                        {showDimensionsDrawer ? 'Ocultar Dimensões' : '1x10x15cm • 0.5kg ⚙'}
+                      </button>
+                    </div>
+
+                    {/* Origin selector */}
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Saída / Origem:</label>
+                      <select
+                        value={orderForm.origin_cep}
+                        onChange={(e) => setOrderForm({ ...orderForm, origin_cep: e.target.value })}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="30730130">Saída 1: Padre Eustáquio (CEP 30730-130)</option>
+                        <option value="30110017">Saída 2: Savassi / Centro (CEP 30110-017)</option>
+                        <option value="30190110">Saída 3: Savannah Mall / Barro Preto (CEP 30190-110)</option>
+                      </select>
+                    </div>
+
+                    {/* Destination CEP input + Calculate button */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={orderForm.destination_cep}
+                          onChange={(e) => setOrderForm({ ...orderForm, destination_cep: e.target.value })}
+                          placeholder="CEP do Cliente (ex: 01018-020)"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCalculateOrderShipping}
+                        disabled={shippingLoading}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 shrink-0"
+                      >
+                        {shippingLoading ? (
+                          <>
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            <span>Calculando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Cotar Fretes</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Optional Drawer for dimensions */}
+                    {showDimensionsDrawer && (
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 grid grid-cols-4 gap-1.5 text-[11px] animate-fadeIn">
+                        <div>
+                          <label className="block text-[9px] text-slate-400 font-bold uppercase">Altura (cm)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={orderForm.package_height}
+                            onChange={(e) => setOrderForm({ ...orderForm, package_height: parseFloat(e.target.value) || 1 })}
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-400 font-bold uppercase">Largura (cm)</label>
+                          <input
+                            type="number"
+                            min="10"
+                            value={orderForm.package_width}
+                            onChange={(e) => setOrderForm({ ...orderForm, package_width: parseFloat(e.target.value) || 10 })}
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-400 font-bold uppercase">Compr. (cm)</label>
+                          <input
+                            type="number"
+                            min="15"
+                            value={orderForm.package_length}
+                            onChange={(e) => setOrderForm({ ...orderForm, package_length: parseFloat(e.target.value) || 15 })}
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-slate-400 font-bold uppercase">Peso (kg)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={orderForm.package_weight}
+                            onChange={(e) => setOrderForm({ ...orderForm, package_weight: parseFloat(e.target.value) || 0.5 })}
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {shippingError && (
+                      <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 p-2 rounded-lg font-medium">
+                        {shippingError}
+                      </p>
+                    )}
+
+                    {/* Quotes list */}
+                    {shippingQuotes.length > 0 && (
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                          Opções Calculadas (Clique para aplicar):
+                        </span>
+                        {shippingQuotes.map((q) => (
+                          <div
+                            key={q.id}
+                            onClick={() => handleApplyShippingQuote(q)}
+                            className="p-2 rounded-lg bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 cursor-pointer transition flex items-center justify-between gap-2 text-xs group"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              {q.company.picture ? (
+                                <img src={q.company.picture} alt="" className="h-5 w-5 object-contain shrink-0" />
+                              ) : (
+                                <span className="h-5 w-5 rounded bg-slate-200 flex items-center justify-center text-[9px] font-bold shrink-0">
+                                  📦
+                                </span>
+                              )}
+                              <div className="truncate">
+                                <span className="font-bold text-slate-900 group-hover:text-blue-700 block truncate">
+                                  {q.company.name} ({q.name})
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                  {q.custom_delivery_time} dia{q.custom_delivery_time !== 1 ? 's' : ''} úteis
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-extrabold text-emerald-600 text-xs block">
+                                R$ {Number(q.custom_price).toFixed(2).replace('.', ',')}
+                              </span>
+                              <span className="text-[9px] text-blue-600 font-semibold group-hover:underline">
+                                Aplicar ✓
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual / Applied Shipping Fee Input */}
                   <div>
-                    <label className="block text-slate-600 font-semibold mb-1">Valor do Frete (R$)</label>
+                    <label className="block text-slate-600 font-semibold mb-1">Valor do Frete Cobrado (R$)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -5682,6 +6073,224 @@ Instagram: @SNACKSTOREBH`;
                   Fechar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: COTAÇÃO RÁPIDA DE FRETE (MELHOR ENVIO) */}
+      {showShippingModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg my-8 overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                  <Truck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Cotação de Frete (Melhor Envio)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Simule valores reais com transportadoras e envie no chat
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShippingModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {/* Saída / Origem */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Endereço de Saída (Origem):
+                </label>
+                <select
+                  value={shippingModalOrigin}
+                  onChange={(e) => setShippingModalOrigin(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                >
+                  <option value="30730130">Saída 1: Padre Eustáquio (CEP 30730-130)</option>
+                  <option value="30110017">Saída 2: Savassi / Centro (CEP 30110-017)</option>
+                  <option value="30190110">Saída 3: Savannah Mall / Barro Preto (CEP 30190-110)</option>
+                  <option value="custom">Outro CEP de Origem...</option>
+                </select>
+                {shippingModalOrigin === 'custom' && (
+                  <input
+                    type="text"
+                    value={shippingModalCustomOrigin}
+                    onChange={(e) => setShippingModalCustomOrigin(e.target.value)}
+                    placeholder="Digite o CEP de origem (ex: 30190-110)"
+                    className="w-full mt-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                )}
+              </div>
+
+              {/* Destino (CEP do Cliente) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  CEP de Destino do Cliente:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={shippingModalCep}
+                    onChange={(e) => setShippingModalCep(e.target.value)}
+                    placeholder="CEP (ex: 01018-020)"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCalculateModalShipping}
+                    disabled={shippingModalLoading}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 shrink-0"
+                  >
+                    {shippingModalLoading ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Calculando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="h-3.5 w-3.5" />
+                        <span>Calcular Frete</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Dimensões do Pacote (Padrão 1x10x15cm, 0.5kg) */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold uppercase">
+                  <span>Dimensões do Pacote (Padrão)</span>
+                  <span className="text-blue-600 font-semibold normal-case">Perfume / Smartwatch</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase">Altura (cm)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={shippingModalHeight}
+                      onChange={(e) => setShippingModalHeight(parseFloat(e.target.value) || 1)}
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase">Largura (cm)</label>
+                    <input
+                      type="number"
+                      min="10"
+                      value={shippingModalWidth}
+                      onChange={(e) => setShippingModalWidth(parseFloat(e.target.value) || 10)}
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase">Compr. (cm)</label>
+                    <input
+                      type="number"
+                      min="15"
+                      value={shippingModalLength}
+                      onChange={(e) => setShippingModalLength(parseFloat(e.target.value) || 15)}
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 font-bold uppercase">Peso (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      value={shippingModalWeight}
+                      onChange={(e) => setShippingModalWeight(parseFloat(e.target.value) || 0.5)}
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Erro */}
+              {shippingModalError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
+                  <span>{shippingModalError}</span>
+                </div>
+              )}
+
+              {/* Resultados da Cotação */}
+              {shippingModalQuotes.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Opções Encontradas ({shippingModalQuotes.length})
+                    </span>
+                    <span className="text-[11px] text-slate-500">Ordenado pelo menor valor</span>
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {shippingModalQuotes.map((quote) => (
+                      <div
+                        key={quote.id}
+                        className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs hover:border-blue-300 transition"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {quote.company.picture ? (
+                            <img src={quote.company.picture} alt="" className="h-6 w-6 object-contain shrink-0" />
+                          ) : (
+                            <span className="h-6 w-6 rounded bg-slate-200 flex items-center justify-center text-xs font-bold shrink-0">
+                              📦
+                            </span>
+                          )}
+                          <div className="truncate">
+                            <span className="font-bold text-slate-900 block truncate">
+                              {quote.company.name} ({quote.name})
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Prazo: {quote.custom_delivery_time || quote.delivery_time} dia{quote.custom_delivery_time !== 1 ? 's' : ''} úteis
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-black text-emerald-600 text-sm block">
+                            R$ {Number(quote.custom_price || quote.price).toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowShippingModal(false)}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-600 font-bold transition text-xs border border-slate-200"
+              >
+                Fechar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendShippingQuoteToChat}
+                disabled={shippingModalQuotes.length === 0}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                title="Enviar resumo comparativo de fretes no WhatsApp da conversa"
+              >
+                <Send className="h-4 w-4" />
+                <span>Enviar Cotação no WhatsApp</span>
+              </button>
             </div>
           </div>
         </div>
