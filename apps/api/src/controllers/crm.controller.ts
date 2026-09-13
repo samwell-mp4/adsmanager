@@ -24,7 +24,8 @@ export async function listConversationsHandler(
     Querystring: {
       profile_id?: string;
       platform?: CrmPlatform;
-      lead_status?: LeadStatus;
+      lead_status?: string;
+      tag_id?: string;
       search?: string;
       marketplace_only?: string;
       limit?: string;
@@ -38,6 +39,7 @@ export async function listConversationsHandler(
       profile_id: req.query.profile_id ? parseInt(req.query.profile_id, 10) : undefined,
       platform: req.query.platform,
       lead_status: req.query.lead_status,
+      tag_id: req.query.tag_id ? parseInt(req.query.tag_id, 10) : undefined,
       search: req.query.search,
       marketplace_only: req.query.marketplace_only === 'true' || req.query.marketplace_only === '1',
       limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
@@ -83,12 +85,34 @@ export async function sendReplyHandler(
 }
 
 export async function updateLeadStatusHandler(
-  req: FastifyRequest<{ Params: { id: string }; Body: { lead_status?: LeadStatus; notes?: string; customer_phone?: string; deal_value?: string } }>,
+  req: FastifyRequest<{
+    Params: { id: string };
+    Body: {
+      lead_status?: string;
+      notes?: string;
+      customer_phone?: string;
+      deal_value?: string;
+      customer_city?: string;
+      customer_state?: string;
+      customer_address?: string;
+      customer_assigned_to?: string;
+    };
+  }>,
   reply: FastifyReply
 ) {
   try {
     const id = parseInt(req.params.id, 10);
-    const updated = await crmService.updateStatus(id, req.body.lead_status, req.body.notes, req.body.customer_phone, req.body.deal_value);
+    const updated = await crmService.updateStatus(
+      id,
+      req.body.lead_status,
+      req.body.notes,
+      req.body.customer_phone,
+      req.body.deal_value,
+      req.body.customer_city,
+      req.body.customer_state,
+      req.body.customer_address,
+      req.body.customer_assigned_to
+    );
     return reply.send({ success: true, data: updated });
   } catch (err: any) {
     return reply.status(500).send({ success: false, error: err.message });
@@ -364,6 +388,299 @@ export async function getInsightsHandler(
     return reply.status(500).send({ success: false, error: err.message });
   }
 }
+
+// ==========================================
+// STATUSES HANDLERS
+// ==========================================
+
+export async function getStatusesHandler(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const statuses = await crmService.getStatuses();
+    return reply.send({ success: true, data: statuses });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function createStatusHandler(
+  req: FastifyRequest<{ Body: { name: string; slug?: string; color: string; icon?: string; position?: number; is_initial?: boolean; is_won?: boolean; is_lost?: boolean } }>,
+  reply: FastifyReply
+) {
+  try {
+    if (!req.body?.name) {
+      return reply.status(400).send({ success: false, error: 'Nome do status é obrigatório' });
+    }
+    const status = await crmService.createStatus(req.body);
+    return reply.send({ success: true, data: status });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function updateStatusConfigHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: any }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const updated = await crmService.updateStatusConfig(id, req.body);
+    return reply.send({ success: true, data: updated });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function deleteStatusHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const deleted = await crmService.deleteStatus(id);
+    return reply.send({ success: deleted });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+// ==========================================
+// TAGS HANDLERS
+// ==========================================
+
+export async function getTagsHandler(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const tags = await crmService.getTags();
+    return reply.send({ success: true, data: tags });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function createTagHandler(
+  req: FastifyRequest<{ Body: { name: string; color?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    if (!req.body?.name) {
+      return reply.status(400).send({ success: false, error: 'Nome da tag é obrigatório' });
+    }
+    const tag = await crmService.createTag(req.body);
+    return reply.send({ success: true, data: tag });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function deleteTagHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const deleted = await crmService.deleteTag(id);
+    return reply.send({ success: deleted });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function addLeadTagHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: { tag_id: number } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    const tagId = req.body?.tag_id;
+    if (!tagId) {
+      return reply.status(400).send({ success: false, error: 'tag_id é obrigatório' });
+    }
+    await crmService.addLeadTag(convId, tagId);
+    return reply.send({ success: true });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function removeLeadTagHandler(
+  req: FastifyRequest<{ Params: { id: string; tagId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    const tagId = parseInt(req.params.tagId, 10);
+    await crmService.removeLeadTag(convId, tagId);
+    return reply.send({ success: true });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+// ==========================================
+// NOTAS HANDLERS
+// ==========================================
+
+export async function getLeadNotesHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    const notes = await crmService.getLeadNotes(convId);
+    return reply.send({ success: true, data: notes });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function createLeadNoteHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: { note_text: string; author_name?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    if (!req.body?.note_text?.trim()) {
+      return reply.status(400).send({ success: false, error: 'Texto da nota é obrigatório' });
+    }
+    const note = await crmService.createLeadNote(convId, req.body.note_text, req.body.author_name);
+    return reply.send({ success: true, data: note });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function deleteLeadNoteHandler(
+  req: FastifyRequest<{ Params: { noteId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const noteId = parseInt(req.params.noteId, 10);
+    const deleted = await crmService.deleteLeadNote(noteId);
+    return reply.send({ success: deleted });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+// ==========================================
+// FOLLOW-UPS HANDLERS
+// ==========================================
+
+export async function getFollowupsHandler(
+  req: FastifyRequest<{ Querystring: { status?: string; timeframe?: any; profile_id?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const filter = {
+      status: req.query.status,
+      timeframe: req.query.timeframe,
+      profile_id: req.query.profile_id ? parseInt(req.query.profile_id, 10) : undefined,
+    };
+    const followups = await crmService.getFollowups(filter);
+    return reply.send({ success: true, data: followups });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function getLeadFollowupsHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    const followups = await crmService.getLeadFollowups(convId);
+    return reply.send({ success: true, data: followups });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function createFollowupHandler(
+  req: FastifyRequest<{
+    Params: { id: string };
+    Body: {
+      profile_id?: number;
+      scheduled_at: string;
+      followup_type?: string;
+      priority?: string;
+      notes?: string;
+      assignee?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    if (!req.body?.scheduled_at) {
+      return reply.status(400).send({ success: false, error: 'Data/hora agendada é obrigatória' });
+    }
+    const followup = await crmService.createFollowup({
+      conversation_id: convId,
+      profile_id: req.body.profile_id,
+      scheduled_at: req.body.scheduled_at,
+      followup_type: req.body.followup_type,
+      priority: req.body.priority,
+      notes: req.body.notes,
+      assignee: req.body.assignee,
+    });
+    return reply.send({ success: true, data: followup });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function updateFollowupHandler(
+  req: FastifyRequest<{
+    Params: { id: string };
+    Body: {
+      status?: string;
+      scheduled_at?: string;
+      notes?: string;
+      priority?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const updated = await crmService.updateFollowup(id, req.body);
+    return reply.send({ success: true, data: updated });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function deleteFollowupHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const deleted = await crmService.deleteFollowup(id);
+    return reply.send({ success: deleted });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+// ==========================================
+// TIMELINE HANDLER
+// ==========================================
+
+export async function getLeadTimelineHandler(
+  req: FastifyRequest<{ Params: { id: string }; Querystring: { limit?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const convId = parseInt(req.params.id, 10);
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const timeline = await crmService.getLeadTimeline(convId, limit);
+    return reply.send({ success: true, data: timeline });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
 
 
 

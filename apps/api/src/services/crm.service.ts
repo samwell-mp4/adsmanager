@@ -142,7 +142,8 @@ export class CrmService {
   async listConversations(filter: {
     profile_id?: number;
     platform?: CrmPlatform;
-    lead_status?: LeadStatus;
+    lead_status?: LeadStatus | string;
+    tag_id?: number;
     search?: string;
     marketplace_only?: boolean;
     limit?: number;
@@ -329,15 +330,129 @@ export class CrmService {
   }
 
   /**
-   * Updates lead status, notes, phone, and deal value
+   * Updates lead status, notes, phone, deal value, and location
    */
-  async updateStatus(conversationId: number, leadStatus?: LeadStatus, notes?: string, customerPhone?: string, dealValue?: string) {
+  async updateStatus(
+    conversationId: number,
+    leadStatus?: LeadStatus | string,
+    notes?: string,
+    customerPhone?: string,
+    dealValue?: string,
+    customerCity?: string,
+    customerState?: string,
+    customerAddress?: string,
+    customerAssignedTo?: string
+  ) {
     return crmRepository.updateConversationLead(conversationId, {
       lead_status: leadStatus,
       notes,
       customer_phone: customerPhone,
-      deal_value: dealValue
+      deal_value: dealValue,
+      customer_city: customerCity,
+      customer_state: customerState,
+      customer_address: customerAddress,
+      customer_assigned_to: customerAssignedTo,
     });
+  }
+
+  // ==========================================
+  // STATUSES PERSONALIZADOS
+  // ==========================================
+
+  async getStatuses() {
+    return crmRepository.listStatuses();
+  }
+
+  async createStatus(data: any) {
+    return crmRepository.createStatus(data);
+  }
+
+  async updateStatusConfig(id: number, data: any) {
+    return crmRepository.updateStatus(id, data);
+  }
+
+  async deleteStatus(id: number) {
+    return crmRepository.deleteStatus(id);
+  }
+
+  // ==========================================
+  // TAGS PERSONALIZADAS
+  // ==========================================
+
+  async getTags() {
+    return crmRepository.listTags();
+  }
+
+  async createTag(data: { name: string; color?: string }) {
+    return crmRepository.createTag(data);
+  }
+
+  async deleteTag(id: number) {
+    return crmRepository.deleteTag(id);
+  }
+
+  async addLeadTag(conversationId: number, tagId: number) {
+    return crmRepository.addTagToLead(conversationId, tagId);
+  }
+
+  async removeLeadTag(conversationId: number, tagId: number) {
+    return crmRepository.removeTagFromLead(conversationId, tagId);
+  }
+
+  async getLeadTags(conversationId: number) {
+    return crmRepository.getLeadTags(conversationId);
+  }
+
+  // ==========================================
+  // NOTAS INTERNAS
+  // ==========================================
+
+  async getLeadNotes(conversationId: number) {
+    return crmRepository.getLeadNotes(conversationId);
+  }
+
+  async createLeadNote(conversationId: number, text: string, author = 'Atendente') {
+    return crmRepository.createLeadNote(conversationId, text, author);
+  }
+
+  async deleteLeadNote(noteId: number) {
+    return crmRepository.deleteLeadNote(noteId);
+  }
+
+  // ==========================================
+  // FOLLOW-UPS E AGENDAMENTOS
+  // ==========================================
+
+  async getFollowups(filter?: any) {
+    return crmRepository.listFollowups(filter);
+  }
+
+  async getLeadFollowups(conversationId: number) {
+    return crmRepository.getLeadFollowups(conversationId);
+  }
+
+  async createFollowup(data: any) {
+    return crmRepository.createFollowup(data);
+  }
+
+  async updateFollowup(id: number, data: any) {
+    return crmRepository.updateFollowup(id, data);
+  }
+
+  async deleteFollowup(id: number) {
+    return crmRepository.deleteFollowup(id);
+  }
+
+  // ==========================================
+  // TIMELINE E EVENTOS
+  // ==========================================
+
+  async getLeadTimeline(conversationId: number, limit = 50) {
+    return crmRepository.getLeadTimeline(conversationId, limit);
+  }
+
+  async recordEvent(conversationId: number, eventType: string, title: string, description?: string, metadata?: any) {
+    return crmRepository.recordEvent(conversationId, eventType, title, description, metadata);
   }
 
   /**
@@ -391,4 +506,5 @@ export class CrmService {
 }
 
 export const crmService = new CrmService();
+
 

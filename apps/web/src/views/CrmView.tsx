@@ -33,6 +33,10 @@ import {
   Eye,
   Activity,
   Compass,
+  Tag,
+  Check,
+  MapPin,
+  User,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -60,6 +64,35 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
 
+  // Operational CRM States (Fase 2)
+  const [statuses, setStatuses] = useState<any[]>([]);
+  const [availableTags, setAvailableTags] = useState<any[]>([]);
+  const [selectedTagFilter, setSelectedTagFilter] = useState<number | 'all'>('all');
+  const [rightPanelTab, setRightPanelTab] = useState<'RESUMO' | 'ATIVIDADES' | 'FOLLOW_UP' | 'NOTAS'>('RESUMO');
+
+  // Lead specifics
+  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [leadFollowups, setLeadFollowups] = useState<any[]>([]);
+  const [leadTimeline, setLeadTimeline] = useState<any[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState<boolean>(false);
+  const [allFollowups, setAllFollowups] = useState<any[]>([]);
+
+  // Modals & Popovers
+  const [showFollowupModal, setShowFollowupModal] = useState<boolean>(false);
+  const [followupForm, setFollowupForm] = useState({
+    scheduled_at: '',
+    followup_type: 'WhatsApp',
+    priority: 'normal',
+    notes: '',
+  });
+  const [showGlobalFollowupsModal, setShowGlobalFollowupsModal] = useState<boolean>(false);
+  const [globalFollowupFilter, setGlobalFollowupFilter] = useState<'hoje' | 'atrasados' | 'amanha' | 'semana' | 'todos' | 'concluidos'>('hoje');
+  const [showAddTagPopover, setShowAddTagPopover] = useState<boolean>(false);
+  const [newTagName, setNewTagName] = useState<string>('');
+  const [newTagColor, setNewTagColor] = useState<string>('#3B82F6');
+  const [newNoteInput, setNewNoteInput] = useState<string>('');
+  const [savingNote, setSavingNote] = useState<boolean>(false);
+
   // Insights State
   const [insightTimeframe, setInsightTimeframe] = useState<string>('30');
   const [openingInsightTab, setOpeningInsightTab] = useState<boolean>(false);
@@ -73,6 +106,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [modalNotes, setModalNotes] = useState<string>('');
   const [modalPhone, setModalPhone] = useState<string>('');
   const [modalDealValue, setModalDealValue] = useState<string>('');
+  const [modalCity, setModalCity] = useState<string>('');
+  const [modalState, setModalState] = useState<string>('');
+  const [modalAddress, setModalAddress] = useState<string>('');
+  const [modalAssignedTo, setModalAssignedTo] = useState<string>('');
   const [savingLeadDetails, setSavingLeadDetails] = useState<boolean>(false);
 
   // Quick reply templates with localStorage persistence
@@ -318,9 +355,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     setModalNotes(lead.notes || '');
     setModalPhone(lead.customer_phone || '');
     setModalDealValue(lead.deal_value || '');
+    setModalCity(lead.customer_city || '');
+    setModalState(lead.customer_state || '');
+    setModalAddress(lead.customer_address || '');
+    setModalAssignedTo(lead.customer_assigned_to || '');
   };
 
-  // Save lead details (Status, Notes, Phone, Deal Value)
+  // Save lead details (Status, Notes, Phone, Deal Value, Location)
   const handleSaveLeadDetails = async () => {
     if (!detailsModalLead) return;
     setSavingLeadDetails(true);
@@ -330,7 +371,11 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         modalStatus,
         modalNotes,
         modalPhone,
-        modalDealValue
+        modalDealValue,
+        modalCity,
+        modalState,
+        modalAddress,
+        modalAssignedTo
       );
       setConversations((prev) =>
         prev.map((c) =>
@@ -341,6 +386,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 notes: modalNotes,
                 customer_phone: modalPhone,
                 deal_value: modalDealValue,
+                customer_city: modalCity,
+                customer_state: modalState,
+                customer_address: modalAddress,
+                customer_assigned_to: modalAssignedTo,
               }
             : c
         )
@@ -354,6 +403,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             notes: modalNotes,
             customer_phone: modalPhone,
             deal_value: modalDealValue,
+            customer_city: modalCity,
+            customer_state: modalState,
+            customer_address: modalAddress,
+            customer_assigned_to: modalAssignedTo,
           },
         });
       }
@@ -402,17 +455,199 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     } catch (e) {}
   };
 
-  // Fetch active conversation messages
+  // Fetch active conversation messages & operational CRM data
   const fetchThread = async (id: number, silent = false) => {
     if (!silent) setLoadingThread(true);
     try {
       const data = await api.getCrmConversationDetails(id);
       setActiveThread(data);
+
+      // Carregar notas, follow-ups e timeline da conversa
+      const [notes, followups, timeline] = await Promise.all([
+        api.getCrmLeadNotes(id).catch(() => []),
+        api.getCrmLeadFollowups(id).catch(() => []),
+        api.getCrmLeadTimeline(id).catch(() => [])
+      ]);
+      setLeadNotes(notes || []);
+      setLeadFollowups(followups || []);
+      setLeadTimeline(timeline || []);
     } catch (err: any) {
       console.error('Error fetching thread:', err);
     } finally {
       if (!silent) setLoadingThread(false);
     }
+  };
+
+  // ==========================================
+  // OPERATIONAL CRM HANDLERS (Fase 2)
+  // ==========================================
+
+  const fetchOperationalData = async () => {
+    try {
+      const [stList, tgList, flList] = await Promise.all([
+        api.getCrmStatuses().catch(() => []),
+        api.getCrmTags().catch(() => []),
+        api.getCrmFollowups().catch(() => [])
+      ]);
+      if (stList && Array.isArray(stList)) setStatuses(stList);
+      if (tgList && Array.isArray(tgList)) setAvailableTags(tgList);
+      if (flList && Array.isArray(flList)) setAllFollowups(flList);
+    } catch (e) {
+      console.warn('Erro ao carregar dados operacionais:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchOperationalData();
+  }, []);
+
+  const handleAddLeadTag = async (tagId: number) => {
+    if (!activeThread?.conversation?.id) return;
+    try {
+      await api.addCrmLeadTag(activeThread.conversation.id, tagId);
+      const tagObj = availableTags.find(t => t.id === tagId);
+      if (tagObj) {
+        const currentTags = activeThread.conversation.tags || [];
+        if (!currentTags.some((t: any) => t.id === tagId)) {
+          const updatedTags = [...currentTags, tagObj];
+          setActiveThread({
+            ...activeThread,
+            conversation: { ...activeThread.conversation, tags: updatedTags }
+          });
+          setConversations(prev => prev.map(c => c.id === activeThread.conversation.id ? { ...c, tags: updatedTags } : c));
+        }
+      }
+      const tl = await api.getCrmLeadTimeline(activeThread.conversation.id);
+      setLeadTimeline(tl || []);
+      setShowAddTagPopover(false);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao adicionar tag: ' + e.message });
+    }
+  };
+
+  const handleCreateAndAddTag = async () => {
+    if (!newTagName.trim() || !activeThread?.conversation?.id) return;
+    try {
+      const createdTag = await api.createCrmTag(newTagName.trim(), newTagColor);
+      setAvailableTags(prev => [...prev.filter(t => t.id !== createdTag.id), createdTag]);
+      await handleAddLeadTag(createdTag.id);
+      setNewTagName('');
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao criar tag: ' + e.message });
+    }
+  };
+
+  const handleRemoveLeadTag = async (tagId: number) => {
+    if (!activeThread?.conversation?.id) return;
+    try {
+      await api.removeCrmLeadTag(activeThread.conversation.id, tagId);
+      const updatedTags = (activeThread.conversation.tags || []).filter((t: any) => t.id !== tagId);
+      setActiveThread({
+        ...activeThread,
+        conversation: { ...activeThread.conversation, tags: updatedTags }
+      });
+      setConversations(prev => prev.map(c => c.id === activeThread.conversation.id ? { ...c, tags: updatedTags } : c));
+      const tl = await api.getCrmLeadTimeline(activeThread.conversation.id);
+      setLeadTimeline(tl || []);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao remover tag: ' + e.message });
+    }
+  };
+
+  const handleCreateLeadNote = async () => {
+    if (!newNoteInput.trim() || !activeThread?.conversation?.id) return;
+    setSavingNote(true);
+    try {
+      const note = await api.createCrmLeadNote(activeThread.conversation.id, newNoteInput.trim(), 'Atendente');
+      setLeadNotes(prev => [note, ...prev]);
+      setNewNoteInput('');
+      const tl = await api.getCrmLeadTimeline(activeThread.conversation.id);
+      setLeadTimeline(tl || []);
+      setFeedback({ type: 'success', message: 'Nota interna adicionada!' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao criar nota: ' + e.message });
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleDeleteLeadNote = async (noteId: number) => {
+    try {
+      await api.deleteCrmLeadNote(noteId);
+      setLeadNotes(prev => prev.filter(n => n.id !== noteId));
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao excluir nota: ' + e.message });
+    }
+  };
+
+  const handleCreateFollowup = async () => {
+    if (!activeThread?.conversation?.id || !followupForm.scheduled_at) {
+      setFeedback({ type: 'error', message: 'Defina a data e horário do follow-up.' });
+      return;
+    }
+    try {
+      const fl = await api.createCrmFollowup(activeThread.conversation.id, {
+        profile_id: activeThread.conversation.profile_id || 0,
+        scheduled_at: followupForm.scheduled_at,
+        followup_type: followupForm.followup_type,
+        priority: followupForm.priority,
+        notes: followupForm.notes,
+        assignee: 'Operador'
+      });
+      setLeadFollowups(prev => [...prev, fl]);
+      setAllFollowups(prev => [...prev, fl]);
+      setShowFollowupModal(false);
+      setFollowupForm({ scheduled_at: '', followup_type: 'WhatsApp', priority: 'normal', notes: '' });
+
+      setActiveThread({
+        ...activeThread,
+        conversation: { ...activeThread.conversation, next_followup: fl }
+      });
+      setConversations(prev => prev.map(c => c.id === activeThread.conversation.id ? { ...c, next_followup: fl } : c));
+
+      const tl = await api.getCrmLeadTimeline(activeThread.conversation.id);
+      setLeadTimeline(tl || []);
+      setFeedback({ type: 'success', message: 'Follow-up agendado com sucesso!' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao agendar follow-up: ' + e.message });
+    }
+  };
+
+  const handleCompleteFollowup = async (followupId: number) => {
+    try {
+      await api.updateCrmFollowup(followupId, { status: 'completed' });
+      setLeadFollowups(prev => prev.map(f => f.id === followupId ? { ...f, status: 'completed', completed_at: new Date() } : f));
+      setAllFollowups(prev => prev.map(f => f.id === followupId ? { ...f, status: 'completed', completed_at: new Date() } : f));
+      if (activeThread?.conversation?.id) {
+        const tl = await api.getCrmLeadTimeline(activeThread.conversation.id);
+        setLeadTimeline(tl || []);
+      }
+      setFeedback({ type: 'success', message: 'Follow-up concluído!' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao concluir follow-up: ' + e.message });
+    }
+  };
+
+  const handleDeleteFollowup = async (followupId: number) => {
+    try {
+      await api.deleteCrmFollowup(followupId);
+      setLeadFollowups(prev => prev.filter(f => f.id !== followupId));
+      setAllFollowups(prev => prev.filter(f => f.id !== followupId));
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: 'Erro ao excluir follow-up: ' + e.message });
+    }
+  };
+
+  const setQuickFollowupDate = (daysFromNow: number, hours = 14, minutes = 30) => {
+    const d = new Date();
+    d.setDate(d.getDate() + daysFromNow);
+    d.setHours(hours, minutes, 0, 0);
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+    setFollowupForm(prev => ({ ...prev, scheduled_at: localISOTime }));
   };
 
   // Delete a conversation / lead
@@ -617,6 +852,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           ...activeThread,
           conversation: { ...activeThread.conversation, lead_status: newStatus },
         });
+        api.getCrmLeadTimeline(targetId).then(tl => setLeadTimeline(tl || [])).catch(() => {});
       }
       fetchConversations(true);
     } catch (err: any) {
@@ -625,17 +861,33 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   };
 
   const getStatusBadge = (status: string) => {
+    const custom = statuses.find(s => s.slug === status || s.name.toLowerCase() === status.toLowerCase());
+    if (custom) {
+      return (
+        <span
+          className="px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 shadow-sm"
+          style={{
+            backgroundColor: `${custom.color}15`,
+            borderColor: `${custom.color}35`,
+            color: custom.color
+          }}
+        >
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: custom.color }}></span>
+          <span>{custom.name}</span>
+        </span>
+      );
+    }
     switch (status) {
       case 'novo':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">Novo Lead</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-200">Novo Lead</span>;
       case 'em_negociacao':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">Negociando</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">Negociando</span>;
       case 'fechado':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Venda Fechada</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200">Venda Fechada</span>;
       case 'perdido':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">Perdido</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200">Perdido</span>;
       default:
-        return null;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">{status}</span>;
     }
   };
 
@@ -774,43 +1026,43 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden w-full max-w-full">
-      {/* Top Header Controls */}
-      <div className="px-6 py-2.5 border-b border-slate-800 bg-slate-900/70 flex flex-wrap items-center justify-between gap-3 shrink-0">
+    <div className="h-full flex flex-col bg-[#F8FAFC] text-slate-800 overflow-hidden w-full max-w-full font-sans">
+      {/* Top Header Controls - Clean White SaaS */}
+      <div className="px-6 py-2.5 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs">
         {/* Left branding & view switcher */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20">
               <MessageSquare className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-white flex items-center gap-2">
-                CRM & Chats Omnichannel
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Webhook Ativo
+              <h1 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                CRM Comercial Omnichannel
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Operacional Ativo
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-400">
-                Central de Atendimento e Funil de Vendas do Marketplace & OLX
+              <p className="text-[11px] text-slate-500">
+                Central Integrada de Atendimento, Leads & Follow-ups
               </p>
             </div>
           </div>
 
           {/* View Mode Tabs (Inbox vs Kanban vs Insights) */}
-          <div className="flex bg-slate-800/90 p-1 rounded-xl border border-slate-700/60 text-xs">
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
             <button
               onClick={() => setCurrentTab('inbox')}
               className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'inbox'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-white text-blue-600 shadow-xs border border-slate-200/80 font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <LayoutList className="h-3.5 w-3.5" />
               <span>Inbox & Chat</span>
               {unreadConversations.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] animate-pulse">
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-white font-black text-[9px] animate-pulse">
                   {unreadConversations.length}
                 </span>
               )}
@@ -819,8 +1071,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               onClick={() => setCurrentTab('kanban')}
               className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'kanban'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-white text-blue-600 shadow-xs border border-slate-200/80 font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Kanban className="h-3.5 w-3.5" />
@@ -830,11 +1082,11 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               onClick={() => setCurrentTab('insights')}
               className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'insights'
-                  ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-md shadow-pink-500/20 ring-1 ring-pink-400/40'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'bg-white text-pink-600 shadow-xs border border-pink-200 font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <BarChart3 className="h-3.5 w-3.5 text-pink-300" />
+              <BarChart3 className="h-3.5 w-3.5 text-pink-500" />
               <span>Insights & Métricas</span>
             </button>
           </div>
@@ -842,31 +1094,46 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
         {/* Global Filters & Polling Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Marketplace Filter Toggle (User explicitly wanted Marketplace chats) */}
+          {/* Follow-ups Global Button with Counter */}
+          <button
+            onClick={() => setShowGlobalFollowupsModal(true)}
+            className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+            title="Abrir Central Geral de Follow-ups"
+          >
+            <Clock className="h-3.5 w-3.5 text-amber-600" />
+            <span>Follow-ups</span>
+            {allFollowups.filter((f) => f.status === 'pending').length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-black text-[10px] shadow-xs">
+                {allFollowups.filter((f) => f.status === 'pending').length}
+              </span>
+            )}
+          </button>
+
+          {/* Marketplace Filter Toggle */}
           <button
             onClick={() => setMarketplaceOnly(!marketplaceOnly)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border shadow-sm ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border shadow-xs ${
               marketplaceOnly
-                ? 'bg-gradient-to-r from-blue-600/30 to-indigo-600/30 border-blue-500/50 text-blue-300 shadow-blue-500/10'
-                : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
             }`}
             title="Filtrar apenas mensagens de vendas de produtos (Marketplace & OLX)"
           >
-            <Store className={`h-3.5 w-3.5 ${marketplaceOnly ? 'text-blue-400' : ''}`} />
-            <span>{marketplaceOnly ? '🛍️ Somente Marketplace' : '🌐 Todas as Conversas'}</span>
+            <Store className={`h-3.5 w-3.5 ${marketplaceOnly ? 'text-blue-600' : 'text-slate-400'}`} />
+            <span>{marketplaceOnly ? 'Somente Marketplace' : 'Todas as Conversas'}</span>
           </button>
 
           {/* Platform Filter */}
-          <div className="flex bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/60 text-xs">
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs">
             <button
               onClick={() => setSelectedPlatform('all')}
-              className={`px-2 py-1 rounded-lg font-medium transition ${selectedPlatform === 'all' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition ${selectedPlatform === 'all' ? 'bg-white text-blue-600 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Todos
             </button>
             <button
               onClick={() => setSelectedPlatform('facebook')}
-              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'facebook' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'facebook' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               <span>Facebook</span>
             </button>
@@ -875,30 +1142,29 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 setSelectedPlatform('whatsapp');
                 api.syncEvolutionWhatsApp().then(() => fetchConversations(true)).catch(() => {});
               }}
-              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'whatsapp' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'whatsapp' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               <span>WhatsApp</span>
             </button>
             <button
               onClick={() => setSelectedPlatform('instagram')}
-              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'instagram' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'instagram' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               <span>Instagram</span>
             </button>
             <button
               onClick={() => setSelectedPlatform('olx')}
-              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'olx' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'olx' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
             >
               <span>OLX</span>
             </button>
           </div>
 
-
           {/* Profile Select */}
           <select
             value={selectedProfileId}
             onChange={(e) => setSelectedProfileId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-            className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium"
+            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
           >
             <option value="all">Todos os Perfis</option>
             {profiles.map((p) => (
@@ -908,28 +1174,52 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             ))}
           </select>
 
-          {/* Lead Status Filter */}
+          {/* Dynamic Lead Status Filter */}
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium"
+            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
           >
             <option value="all">Status (Todos)</option>
-            <option value="novo">Novos Leads</option>
-            <option value="em_negociacao">Em Negociação</option>
-            <option value="fechado">Venda Fechada</option>
-            <option value="perdido">Perdido</option>
+            {statuses.length > 0 ? (
+              statuses.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="novo">Novos Leads</option>
+                <option value="em_negociacao">Em Negociação</option>
+                <option value="fechado">Venda Fechada</option>
+                <option value="perdido">Perdido</option>
+              </>
+            )}
+          </select>
+
+          {/* Tag Filter */}
+          <select
+            value={selectedTagFilter}
+            onChange={(e) => setSelectedTagFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
+          >
+            <option value="all">Tags (Todas)</option>
+            {availableTags.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
           </select>
 
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-1.5 rounded-xl border transition ${
+            className={`p-1.5 rounded-xl border transition shadow-xs ${
               soundEnabled
-                ? 'bg-slate-800 text-emerald-400 border-slate-700'
-                : 'bg-slate-800 text-slate-500 border-slate-700'
+                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                : 'bg-white text-slate-400 border-slate-200 hover:text-slate-700'
             }`}
-            title={soundEnabled ? 'Notificações sonoras ativas (clique para mutar)' : 'Som mutado (clique para ativar)'}
+            title={soundEnabled ? 'Notificações sonoras ativas' : 'Som mutado'}
           >
             {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </button>
@@ -938,16 +1228,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           <div className="relative">
             <button
               onClick={() => setShowNotificationCenter(!showNotificationCenter)}
-              className={`p-1.5 rounded-xl border transition relative ${
+              className={`p-1.5 rounded-xl border transition relative shadow-xs ${
                 unreadConversations.length > 0
-                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
+                  : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
               }`}
               title="Central de Notificações de Novas Mensagens"
             >
               <Bell className="h-4 w-4" />
               {unreadConversations.length > 0 && (
-                <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-emerald-500 text-slate-950 font-black text-[9px] rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-emerald-500 text-white font-black text-[9px] rounded-full flex items-center justify-center shadow-xs animate-pulse">
                   {unreadConversations.length}
                 </span>
               )}
@@ -955,20 +1245,20 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
             {/* Notification Center Dropdown */}
             {showNotificationCenter && (
-              <div className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 space-y-2 animate-fadeIn">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 space-y-2 animate-fadeIn">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-bold text-white">Central de Mensagens</span>
+                    <Bell className="h-4 w-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-slate-800">Central de Mensagens</span>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-100">
                     {unreadConversations.length} não lidas
                   </span>
                 </div>
 
-                <div className="max-h-60 overflow-y-auto space-y-1.5 divide-y divide-slate-800/60">
+                <div className="max-h-60 overflow-y-auto space-y-1.5 divide-y divide-slate-100">
                   {unreadConversations.length === 0 ? (
-                    <div className="py-6 text-center text-xs text-slate-500">
+                    <div className="py-6 text-center text-xs text-slate-400">
                       Tudo em dia! Nenhuma mensagem nova pendente.
                     </div>
                   ) : (
@@ -980,17 +1270,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                           setCurrentTab('inbox');
                           setShowNotificationCenter(false);
                         }}
-                        className="pt-1.5 p-2 rounded-xl hover:bg-slate-800/70 cursor-pointer transition flex items-start gap-2.5"
+                        className="pt-1.5 p-2 rounded-xl hover:bg-slate-50 cursor-pointer transition flex items-start gap-2.5"
                       >
-                        <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300 shrink-0 border border-emerald-500/40">
+                        <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-600 shrink-0 border border-slate-200">
                           {c.customer_name?.charAt(0) || 'C'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-200 truncate">{c.customer_name}</span>
-                            <span className="text-[9px] text-emerald-400 font-bold">Nova</span>
+                            <span className="text-xs font-bold text-slate-800 truncate">{c.customer_name}</span>
+                            <span className="text-[9px] text-emerald-600 font-bold">Nova</span>
                           </div>
-                          <p className="text-[11px] text-slate-400 truncate">{c.last_message || 'Nova mensagem recebida'}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{c.last_message || 'Nova mensagem recebida'}</p>
                         </div>
                       </div>
                     ))
@@ -1003,14 +1293,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           {/* Auto-Refresh Toggle */}
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition border flex items-center gap-1.5 ${
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition border flex items-center gap-1.5 shadow-xs ${
               autoRefresh
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-slate-800 text-slate-400 border-slate-700'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800'
             }`}
             title="Alternar sincronização automática a cada 5s"
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+            <span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? 'bg-emerald-500 animate-ping' : 'bg-slate-400'}`} />
             <span>{autoRefresh ? 'Auto 5s' : 'Pausado'}</span>
           </button>
 
@@ -1018,33 +1308,32 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           <button
             onClick={() => fetchConversations()}
             disabled={loadingList}
-            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+            className="p-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 transition shadow-xs"
             title="Atualizar agora"
           >
-            <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin text-blue-600' : ''}`} />
           </button>
 
           {/* Sync WhatsApp Evolution API Button */}
           <button
             onClick={handleSyncWhatsApp}
             disabled={syncingWhatsApp}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-1.5 transition shadow-xs disabled:opacity-50"
             title="Sincronização automática ativa via Webhook em tempo real e a cada 15s. Clique para forçar sincronização imediata."
           >
             <span className="relative flex h-2 w-2 mr-0.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingWhatsApp ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>{syncingWhatsApp ? 'Sincronizando...' : 'WhatsApp Auto-Sync'}</span>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingWhatsApp ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>{syncingWhatsApp ? 'Sincronizando...' : 'WhatsApp Sync'}</span>
           </button>
-
 
           {/* Test n8n Webhook Button */}
           <button
             onClick={handleTestN8nWebhook}
             disabled={testingWebhook}
-            className="px-2.5 py-1.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+            className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-xs"
             title="Disparar teste para o webhook do n8n"
           >
             <span>📡</span>
@@ -1055,18 +1344,18 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           <button
             onClick={handleSyncExtensions}
             disabled={syncingExtensions}
-            className="px-2.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-xs disabled:opacity-50"
             title="Atualizar arquivos da extensão em todos os servidores e navegadores Docker ativos (Desktop > dashboard_crm)"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingExtensions ? 'animate-spin text-purple-400' : ''}`} />
-            <span className="hidden lg:inline">{syncingExtensions ? 'Atualizando...' : 'Atualizar Servidores'}</span>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingExtensions ? 'animate-spin text-purple-600' : ''}`} />
+            <span className="hidden lg:inline">{syncingExtensions ? 'Atualizando...' : 'Atualizar Extensões'}</span>
           </button>
 
           {/* Download Extension Button */}
           <a
             href="/api/crm/extension/download"
             download="adsmanager-crm-extension.zip"
-            className="px-2.5 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-400 hover:text-blue-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+            className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-xs"
             title="Baixar Extensão Oficial (.zip)"
           >
             <Download className="h-3.5 w-3.5" />
@@ -1078,19 +1367,19 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       {/* Global Feedback Banner */}
       {feedback && (
         <div
-          className={`mx-6 mt-2.5 p-2.5 rounded-xl text-xs flex items-center justify-between gap-3 shadow-lg transition-all animate-fadeIn shrink-0 ${
+          className={`mx-6 mt-2.5 p-2.5 rounded-xl text-xs flex items-center justify-between gap-3 shadow-sm transition-all animate-fadeIn shrink-0 ${
             feedback.type === 'success'
-              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-              : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border border-rose-200 text-rose-800'
           }`}
         >
           <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /> : <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />}
+            {feedback.type === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /> : <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />}
             <span className="font-medium">{feedback.message}</span>
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded hover:bg-white/10"
+            className="text-slate-400 hover:text-slate-700 text-xs px-2 py-0.5 rounded hover:bg-black/5"
           >
             ✕
           </button>
@@ -1101,16 +1390,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       {currentTab === 'inbox' ? (
         /* INBOX & CHAT VIEW */
         <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
-          {/* Left Column: Conversations List (Protected with shrink-0) */}
-          <div className="w-80 md:w-96 shrink-0 flex-shrink-0 min-w-[320px] max-w-[380px] border-r border-slate-800 flex flex-col bg-slate-900/50 min-h-0 z-10">
+          {/* Left Column: Conversations List - Clean White Style */}
+          <div className="w-80 md:w-96 shrink-0 flex-shrink-0 min-w-[320px] max-w-[380px] border-r border-slate-200 flex flex-col bg-white min-h-0 z-10 shadow-xs">
             {/* Header with Title, Lead Count & Select All */}
-            <div className="px-4 py-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/80 shrink-0">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
               <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-blue-400" />
-                <span className="text-xs font-bold text-slate-200">
+                <MessageSquare className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-bold text-slate-800">
                   {marketplaceOnly ? 'Leads do Marketplace' : 'Todas as Conversas'}
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold border border-blue-500/30">
+                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
                   {conversations.length}
                 </span>
               </div>
@@ -1119,13 +1408,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   onClick={handleSelectAll}
                   className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
                     selectedIds.length > 0 && selectedIds.length === conversations.length
-                      ? 'bg-blue-600/30 text-blue-400 border border-blue-500/40'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
                   }`}
                   title={selectedIds.length === conversations.length ? 'Desmarcar todos' : 'Selecionar todos'}
                 >
                   {selectedIds.length > 0 && selectedIds.length === conversations.length ? (
-                    <CheckSquare className="h-3.5 w-3.5 text-blue-400" />
+                    <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
                   ) : (
                     <Square className="h-3.5 w-3.5" />
                   )}
@@ -1134,51 +1423,51 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 <button
                   onClick={() => fetchConversations()}
                   disabled={loadingList}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
                   title="Atualizar lista"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingList ? 'animate-spin text-blue-600' : ''}`} />
                 </button>
               </div>
             </div>
 
             {/* Search Box */}
-            <div className="p-3 border-b border-slate-800/80 shrink-0">
+            <div className="p-3 border-b border-slate-100 shrink-0">
               <div className="relative">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && fetchConversations()}
                   placeholder="Buscar cliente, produto ou mensagem..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 placeholder:text-slate-600 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white placeholder:text-slate-400 transition"
                 />
               </div>
             </div>
 
             {/* Conversations Scrollable List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-800/50">
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
               {loadingList && conversations.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
-                  <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
-                  Carregando conversas sincronizadas...
+                <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
+                  Carregando conversas...
                 </div>
               ) : conversations.length === 0 ? (
                 <div className="py-16 px-6 text-center space-y-4">
-                  <MessageSquare className="h-10 w-10 text-slate-700 mx-auto" />
-                  <div className="text-xs text-slate-300 font-semibold">Nenhuma conversa encontrada</div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <MessageSquare className="h-10 w-10 text-slate-300 mx-auto" />
+                  <div className="text-xs text-slate-700 font-semibold">Nenhuma conversa encontrada</div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
                     {marketplaceOnly
-                      ? 'Nenhum lead com produto detectado no momento. Verifique se o Marketplace do Facebook está aberto no perfil.'
-                      : 'Abra o Facebook Messenger, Instagram Direct ou WhatsApp para capturar chats automaticamente!'}
+                      ? 'Nenhum lead com produto detectado no momento.'
+                      : 'Abra o Facebook, Instagram ou WhatsApp para sincronizar chats automaticamente.'}
                   </p>
                   {marketplaceOnly && (
                     <button
                       onClick={() => setMarketplaceOnly(false)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs hover:text-white"
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs hover:bg-slate-200"
                     >
-                      Ver todos os chats (incluindo pessoais)
+                      Ver todos os chats
                     </button>
                   )}
                 </div>
@@ -1194,19 +1483,19 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                       onClick={() => setSelectedId(conv.id)}
                       className={`w-full text-left p-3 flex items-start gap-2.5 transition relative group cursor-pointer ${
                         isSelected
-                          ? 'bg-blue-600/15 border-l-4 border-blue-500 shadow-sm'
+                          ? 'bg-blue-50/90 border-l-4 border-l-blue-600 shadow-xs'
                           : isUnread
-                          ? 'bg-emerald-500/10 border-l-4 border-emerald-500 ring-1 ring-emerald-500/30'
-                          : 'hover:bg-slate-800/40 border-l-4 border-transparent'
+                          ? 'bg-emerald-50/80 border-l-4 border-l-emerald-500'
+                          : 'hover:bg-slate-50 border-l-4 border-transparent'
                       }`}
                     >
-                      {/* Checkbox de seleção em massa */}
+                      {/* Selection Checkbox */}
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={(e) => handleToggleSelect(conv.id, e)}
                         onClick={(e) => e.stopPropagation()}
-                        className="h-4 w-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer shrink-0 mt-3"
+                        className="h-4 w-4 rounded bg-white border-slate-300 text-blue-600 focus:ring-0 cursor-pointer shrink-0 mt-3"
                       />
 
                       {/* Avatar */}
@@ -1216,19 +1505,19 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                             src={conv.customer_avatar}
                             alt={conv.customer_name}
                             className={`h-10 w-10 rounded-full object-cover border ${
-                              isUnread ? 'border-emerald-400 ring-2 ring-emerald-500/40' : 'border-slate-700'
+                              isUnread ? 'border-emerald-500 ring-2 ring-emerald-200' : 'border-slate-200'
                             }`}
                           />
                         ) : (
-                          <div className={`h-10 w-10 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs border ${
-                            isUnread ? 'border-emerald-400 ring-2 ring-emerald-500/40' : 'border-slate-700'
+                          <div className={`h-10 w-10 rounded-full bg-gradient-to-tr from-slate-100 to-slate-200 flex items-center justify-center text-slate-700 font-bold text-xs border ${
+                            isUnread ? 'border-emerald-500 ring-2 ring-emerald-200' : 'border-slate-200'
                           }`}>
                             {conv.customer_name?.charAt(0)?.toUpperCase() || 'C'}
                           </div>
                         )}
                         {/* Platform Icon Badge */}
                         <span
-                          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow ${
+                          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow-xs ${
                             conv.platform === 'facebook'
                               ? 'bg-blue-600'
                               : conv.platform === 'whatsapp'
@@ -1249,55 +1538,72 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                         </span>
                       </div>
 
-
                       {/* Chat Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className={`text-xs truncate ${isUnread ? 'font-black text-emerald-300' : 'font-bold text-slate-200'}`}>
+                          <span className={`text-xs truncate ${isUnread ? 'font-black text-slate-900' : 'font-semibold text-slate-800'}`}>
                             {conv.customer_name}
                           </span>
-                          <span className="text-[10px] text-slate-500 shrink-0">
+                          <span className="text-[10px] text-slate-400 shrink-0 font-medium">
                             {new Date(conv.last_message_at || conv.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
 
                         {/* Product Tag */}
                         {conv.product_title && (
-                          <div className="text-[11px] text-blue-400 font-medium truncate flex items-center gap-1 mb-1">
+                          <div className="text-[11px] text-blue-600 font-medium truncate flex items-center gap-1 mb-1">
                             <ShoppingBag className="h-3 w-3 shrink-0" />
                             <span className="truncate">{conv.product_title}</span>
                           </div>
                         )}
 
                         {/* Last Message Snippet */}
-                        <p className={`text-xs truncate mb-1.5 ${isUnread ? 'font-semibold text-slate-200' : 'text-slate-400'}`}>
+                        <p className={`text-xs truncate mb-1.5 ${isUnread ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>
                           {conv.last_message || 'Nenhuma mensagem recente'}
                         </p>
 
-                        {/* Footer tags & Unread Badge & Delete Action */}
+                        {/* Tags list in conversation item */}
+                        {conv.tags && conv.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-1.5">
+                            {conv.tags.slice(0, 3).map((t: any) => (
+                              <span
+                                key={t.id}
+                                style={{ backgroundColor: `${t.color}15`, color: t.color, borderColor: `${t.color}30` }}
+                                className="text-[9px] px-1.5 py-0.2 rounded font-semibold border flex items-center gap-1"
+                              >
+                                {t.name}
+                              </span>
+                            ))}
+                            {conv.tags.length > 3 && (
+                              <span className="text-[9px] text-slate-400 font-medium">
+                                +{conv.tags.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Footer info: Status, Next Followup, Unread */}
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {getStatusBadge(conv.lead_status || 'novo')}
-                            {conv.profile_name && (
-                              <span className="text-[10px] text-slate-500 truncate max-w-[90px]">
-                                {conv.profile_name}
+                            {conv.next_followup && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-semibold flex items-center gap-1" title={conv.next_followup.notes || 'Follow-up agendado'}>
+                                <Clock className="h-2.5 w-2.5 text-amber-600" />
+                                {new Date(conv.next_followup.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
                               </span>
                             )}
                           </div>
 
                           <div className="flex items-center gap-1.5">
-                            {/* WhatsApp-style Unread Badge */}
                             {isUnread && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] shadow-sm animate-pulse">
+                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white font-black text-[10px] shadow-xs">
                                 {conv.unread_count || 1}
                               </span>
                             )}
-
-                            {/* Delete Button on Hover */}
                             <button
                               onClick={(e) => handleDeleteConversation(conv.id, conv.customer_name, e)}
                               disabled={deletingId === conv.id}
-                              className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition"
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 opacity-0 group-hover:opacity-100 transition"
                               title="Excluir lead e conversa"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1312,14 +1618,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             </div>
           </div>
 
-          {/* Center Column: Active Chat Thread (Protected with min-w-0) */}
-          <div className="flex-1 min-w-0 flex flex-col bg-slate-950 min-h-0">
+          {/* Center Column: Active Chat Thread - Clean White Design */}
+          <div className="flex-1 min-w-0 flex flex-col bg-[#F8FAFC] min-h-0">
             {activeThread ? (
               <>
                 {/* Thread Header */}
-                <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between gap-4 shrink-0">
+                <div className="px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-4 shrink-0 shadow-xs">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 shrink-0 border border-slate-700">
+                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700 shrink-0 border border-slate-200">
                       {activeThread.conversation.customer_avatar ? (
                         <img
                           src={activeThread.conversation.customer_avatar}
@@ -1332,23 +1638,29 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-white truncate">
+                        <h2 className="text-sm font-bold text-slate-900 truncate">
                           {activeThread.conversation.customer_name}
                         </h2>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white uppercase ${
-                            activeThread.conversation.platform === 'facebook' ? 'bg-blue-600' : 'bg-purple-600'
+                            activeThread.conversation.platform === 'facebook'
+                              ? 'bg-blue-600'
+                              : activeThread.conversation.platform === 'whatsapp'
+                              ? 'bg-emerald-600'
+                              : activeThread.conversation.platform === 'instagram'
+                              ? 'bg-pink-600'
+                              : 'bg-purple-600'
                           }`}
                         >
                           {activeThread.conversation.platform}
                         </span>
                       </div>
                       {activeThread.conversation.product_title && (
-                        <p className="text-xs text-blue-400 font-medium truncate flex items-center gap-1">
+                        <p className="text-xs text-blue-600 font-medium truncate flex items-center gap-1">
                           <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{activeThread.conversation.product_title}</span>
                           {activeThread.conversation.product_price && (
-                            <span className="text-emerald-400 font-bold ml-1">
+                            <span className="text-emerald-600 font-bold ml-1">
                               ({activeThread.conversation.product_price})
                             </span>
                           )}
@@ -1357,19 +1669,39 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     </div>
                   </div>
 
-                  {/* Actions: Status Dropdown, noVNC Link & Delete */}
+                  {/* Actions: Status Dropdown, Follow-up Shortcut, noVNC Link & Delete */}
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Status Dropdown */}
                     <select
                       value={activeThread.conversation.lead_status || 'novo'}
                       onChange={(e) => handleStatusChange(activeThread.conversation.id, e.target.value)}
-                      className="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium"
+                      className="bg-white border border-slate-200 text-xs text-slate-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
                     >
-                      <option value="novo">Status: Novo Lead</option>
-                      <option value="em_negociacao">Status: Negociando</option>
-                      <option value="fechado">Status: Venda Fechada</option>
-                      <option value="perdido">Status: Perdido</option>
+                      {statuses.length > 0 ? (
+                        statuses.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            Status: {s.name}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="novo">Status: Novo Lead</option>
+                          <option value="em_negociacao">Status: Negociando</option>
+                          <option value="fechado">Status: Venda Fechada</option>
+                          <option value="perdido">Status: Perdido</option>
+                        </>
+                      )}
                     </select>
+
+                    {/* Quick +Followup Button in Chat Header */}
+                    <button
+                      onClick={() => setShowFollowupModal(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold flex items-center gap-1 transition shadow-xs"
+                      title="Agendar Follow-up para este cliente"
+                    >
+                      <Clock className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="hidden sm:inline">+ Follow-up</span>
+                    </button>
 
                     {/* Open in Browser VNC Button */}
                     {onOpenVnc && activeThread.conversation.profile_id && (
@@ -1378,10 +1710,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                           const targetProfile = profiles.find((p) => p.id === activeThread.conversation.profile_id);
                           if (targetProfile) onOpenVnc(targetProfile);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition border border-slate-700"
+                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition border border-slate-200 shadow-xs"
                         title="Abrir navegador noVNC desta conversa"
                       >
-                        <Tv className="h-3.5 w-3.5 text-blue-400" />
+                        <Tv className="h-3.5 w-3.5 text-blue-600" />
                         <span className="hidden sm:inline">Abrir noVNC</span>
                       </button>
                     )}
@@ -1390,7 +1722,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     <button
                       onClick={(e) => handleDeleteConversation(activeThread.conversation.id, activeThread.conversation.customer_name, e)}
                       disabled={deletingId === activeThread.conversation.id}
-                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-medium flex items-center gap-1 transition"
+                      className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-medium flex items-center gap-1 transition shadow-xs"
                       title="Excluir este lead e histórico"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1399,10 +1731,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
 
                 {/* Chat Messages Stream */}
-                <div className="flex-1 p-6 overflow-y-auto space-y-4 min-h-0">
+                <div className="flex-1 p-6 overflow-y-auto space-y-4 min-h-0 bg-[#F8FAFC]">
                   {loadingThread ? (
-                    <div className="py-20 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
-                      <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                    <div className="py-20 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                      <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
                       Carregando mensagens do chat...
                     </div>
                   ) : (() => {
@@ -1418,7 +1750,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
                     if (threadMessages.length === 0) {
                       return (
-                        <div className="py-20 text-center text-slate-600 text-xs">
+                        <div className="py-20 text-center text-slate-400 text-xs">
                           Nenhuma mensagem registrada nesta conversa ainda.
                         </div>
                       );
@@ -1434,15 +1766,15 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                           }`}
                         >
                           <div
-                            className={`p-3.5 rounded-2xl text-xs leading-relaxed break-words shadow-md ${
+                            className={`p-3.5 rounded-2xl text-xs leading-relaxed break-words shadow-xs ${
                               isMe
-                                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-br-none'
-                                : 'bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-bl-none'
+                                ? 'bg-blue-600 text-white rounded-tr-xs shadow-blue-500/10'
+                                : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-xs'
                             }`}
                           >
                             {msg.content}
                           </div>
-                          <span className="text-[10px] text-slate-500 mt-1 px-1">
+                          <span className="text-[10px] text-slate-400 mt-1 px-1 font-medium">
                             {new Date(msg.sent_at || msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             {isMe && ' • Enviado'}
                           </span>
@@ -1454,16 +1786,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
 
                 {/* Quick Reply Templates Bar */}
-                <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/30 flex items-center gap-2 overflow-x-auto min-w-0 max-w-full shrink-0">
+                <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center gap-2 overflow-x-auto min-w-0 max-w-full shrink-0">
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 shrink-0">
-                      <Sparkles className="h-3 w-3 text-amber-400" />
-                      Respostas Rápidas:
+                      <Sparkles className="h-3 w-3 text-amber-500" />
+                      Respostas:
                     </span>
                     <button
                       onClick={() => setShowQuickSettings(true)}
-                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
-                      title="Configurar Mensagens Personalizadas / Rápidas"
+                      className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+                      title="Configurar Mensagens Rápidas"
                     >
                       <Settings className="h-3 w-3" />
                     </button>
@@ -1472,7 +1804,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     <button
                       key={idx}
                       onClick={() => setReplyText(template)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] whitespace-nowrap transition border border-slate-700/50"
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] whitespace-nowrap transition border border-slate-200 font-medium"
                       title="Clique para preencher a mensagem"
                     >
                       {template}
@@ -1481,7 +1813,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
 
                 {/* Reply Input Bar */}
-                <div className="p-4 border-t border-slate-800 bg-slate-900/80 flex items-end gap-3 shrink-0">
+                <div className="p-4 border-t border-slate-200 bg-white flex items-end gap-3 shrink-0">
                   <textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -1491,14 +1823,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                         handleSendReply();
                       }
                     }}
-                    placeholder="Digite sua resposta (pressione Enter para enviar para o Facebook/OLX)..."
+                    placeholder="Digite sua resposta (pressione Enter para enviar)..."
                     rows={2}
-                    className="flex-1 p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-blue-500 transition resize-none placeholder:text-slate-600 font-sans"
+                    className="flex-1 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition resize-none placeholder:text-slate-400 font-sans"
                   />
                   <button
                     onClick={() => handleSendReply()}
                     disabled={sendingReply || !replyText.trim()}
-                    className="px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-blue-600/25 shrink-0"
+                    className="px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition shadow-sm shadow-blue-500/20 shrink-0"
                   >
                     {sendingReply ? (
                       <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1510,108 +1842,636 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-600">
-                <MessageSquare className="h-12 w-12 text-slate-700" />
-                <div className="text-sm font-semibold text-slate-400">Nenhuma conversa selecionada</div>
-                <p className="text-xs text-slate-500 max-w-sm">
-                  Selecione um cliente na lista à esquerda para visualizar as mensagens e responder diretamente pelo painel.
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-400">
+                <MessageSquare className="h-12 w-12 text-slate-300" />
+                <div className="text-sm font-semibold text-slate-600">Nenhuma conversa selecionada</div>
+                <p className="text-xs text-slate-400 max-w-sm">
+                  Selecione um cliente na lista à esquerda para visualizar mensagens, gerenciar follow-ups e operar a venda.
                 </p>
               </div>
             )}
           </div>
 
-          {/* Right Column: Lead & Product Details */}
+          {/* Right Column: Ficha Comercial Operacional do Cliente - 4 Tabs */}
           {activeThread && (
-            <div className="w-72 shrink-0 flex-shrink-0 min-w-[280px] border-l border-slate-800 bg-slate-900/30 p-5 overflow-y-auto space-y-6 hidden xl:block min-h-0">
-              {/* Product Card */}
-              {activeThread.conversation.product_title && (
-                <div className="space-y-2">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Store className="h-3.5 w-3.5 text-blue-400" />
-                    Produto Negociado
-                  </span>
-                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                    <div className="text-xs font-bold text-white line-clamp-2">
-                      {activeThread.conversation.product_title}
-                    </div>
-                    {activeThread.conversation.product_price && (
-                      <div className="text-sm font-black text-emerald-400">
-                        {activeThread.conversation.product_price}
-                      </div>
+            <div className="w-80 shrink-0 flex-shrink-0 min-w-[300px] border-l border-slate-200 bg-white flex flex-col min-h-0 hidden xl:flex shadow-xs">
+              {/* Client Top Header in Sidebar */}
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-11 w-11 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 font-bold text-sm border border-slate-300 shrink-0">
+                    {activeThread.conversation.customer_avatar ? (
+                      <img src={activeThread.conversation.customer_avatar} alt="" className="h-full w-full rounded-full object-cover" />
+                    ) : (
+                      activeThread.conversation.customer_name?.charAt(0) || 'C'
                     )}
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xs font-bold text-slate-900 truncate">
+                      {activeThread.conversation.customer_name}
+                    </h3>
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                      <span className="capitalize font-semibold text-blue-600">{activeThread.conversation.platform}</span>
+                      <span>•</span>
+                      <span className="truncate">{activeThread.conversation.customer_assigned_to || activeThread.conversation.profile_name || 'Sem atendente'}</span>
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              {/* Lead Info */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Dados do Lead
-                </span>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Nome do Cliente</span>
-                    <span className="font-semibold text-slate-200">{activeThread.conversation.customer_name}</span>
-                  </div>
-                  {activeThread.conversation.customer_phone && (
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">WhatsApp / Telefone</span>
-                      <a
-                        href={`https://wa.me/${activeThread.conversation.customer_phone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-semibold text-emerald-400 hover:underline flex items-center gap-1"
-                      >
-                        <Phone className="h-3 w-3" />
-                        {activeThread.conversation.customer_phone}
-                      </a>
-                    </div>
-                  )}
-                  {activeThread.conversation.deal_value && (
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Valor Acordado</span>
-                      <span className="font-bold text-emerald-400">{activeThread.conversation.deal_value}</span>
-                    </div>
-                  )}
-                  {activeThread.conversation.notes && (
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Observações</span>
-                      <p className="text-[11px] text-slate-300 italic bg-slate-900 p-2 rounded-lg border border-slate-800">
-                        {activeThread.conversation.notes}
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Canal de Origem</span>
-                    <span className="font-semibold text-blue-400 capitalize">{activeThread.conversation.platform}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Perfil no Sistema</span>
-                    <span className="font-semibold text-slate-300">{activeThread.conversation.profile_name || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Status Atual</span>
-                    <div className="mt-1">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
-                  </div>
+                {/* Quick Action Buttons (Barra de Ações Rápidas) */}
+                <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-slate-200/60 text-center">
+                  <button
+                    onClick={() => setRightPanelTab('RESUMO')}
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold flex flex-col items-center gap-0.5 transition"
+                    title="Resumo Geral do Lead"
+                  >
+                    <User className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Resumo</span>
+                  </button>
+                  <button
+                    onClick={() => setShowFollowupModal(true)}
+                    className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-semibold flex flex-col items-center gap-0.5 transition"
+                    title="Agendar Follow-up"
+                  >
+                    <Clock className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Follow-up</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddTagPopover(!showAddTagPopover)}
+                    className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 text-[10px] font-semibold flex flex-col items-center gap-0.5 transition"
+                    title="Adicionar Tag"
+                  >
+                    <Tag className="h-3.5 w-3.5 text-purple-600" />
+                    <span>Tag</span>
+                  </button>
+                  <button
+                    onClick={() => setRightPanelTab('NOTAS')}
+                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-semibold flex flex-col items-center gap-0.5 transition"
+                    title="Criar Nota Interna"
+                  >
+                    <Edit3 className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Nota</span>
+                  </button>
+                  <button
+                    onClick={() => openLeadDetails(activeThread.conversation)}
+                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold flex flex-col items-center gap-0.5 transition"
+                    title="Editar Todos os Dados do Lead"
+                  >
+                    <Settings className="h-3.5 w-3.5 text-slate-600" />
+                    <span>Editar</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Fast Action Buttons in Sidebar */}
-              <div className="pt-2 border-t border-slate-800 space-y-2">
+              {/* Status & Tags Quick Bar */}
+              <div className="px-4 py-3 border-b border-slate-100 bg-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Etapa Comercial:</span>
+                  <div className="shrink-0">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
+                </div>
+
+                {/* Tags list with inline delete + Add Tag Popover */}
+                <div className="relative">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {activeThread.conversation.tags && activeThread.conversation.tags.length > 0 ? (
+                      activeThread.conversation.tags.map((tag: any) => (
+                        <span
+                          key={tag.id}
+                          style={{ backgroundColor: `${tag.color}15`, color: tag.color, borderColor: `${tag.color}35` }}
+                          className="text-[10px] px-2 py-0.5 rounded-md font-semibold border flex items-center gap-1 group/tag shadow-2xs"
+                        >
+                          <span>{tag.name}</span>
+                          <button
+                            onClick={() => handleRemoveLeadTag(tag.id)}
+                            className="hover:opacity-80 text-[11px] leading-none ml-0.5 font-bold"
+                            title="Remover tag do lead"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Nenhuma tag vinculada</span>
+                    )}
+
+                    {/* Toggle Add Tag Button */}
+                    <button
+                      onClick={() => setShowAddTagPopover(!showAddTagPopover)}
+                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 flex items-center gap-1 transition"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Tag</span>
+                    </button>
+                  </div>
+
+                  {/* Add Tag Popover */}
+                  {showAddTagPopover && (
+                    <div className="absolute top-full left-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-3 z-30 space-y-2.5 animate-fadeIn">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-xs font-bold text-slate-800">Vincular Tag</span>
+                        <button
+                          onClick={() => setShowAddTagPopover(false)}
+                          className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* Existing tags to click */}
+                      <div className="max-h-36 overflow-y-auto space-y-1">
+                        {availableTags.map((tag) => {
+                          const isAlreadyLinked = activeThread.conversation.tags?.some((t: any) => t.id === tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              onClick={() => {
+                                if (!isAlreadyLinked) handleAddLeadTag(tag.id);
+                              }}
+                              disabled={isAlreadyLinked}
+                              className={`w-full text-left px-2 py-1 rounded-md text-xs font-medium flex items-center justify-between ${
+                                isAlreadyLinked
+                                  ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
+                                  : 'hover:bg-slate-50 text-slate-700'
+                              }`}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                <span>{tag.name}</span>
+                              </span>
+                              {isAlreadyLinked && <span className="text-[10px] text-emerald-600 font-bold">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Create New Tag Inline */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={newTagName}
+                          onChange={(e) => setNewTagName(e.target.value)}
+                          placeholder="Criar nova tag..."
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                        <input
+                          type="color"
+                          value={newTagColor}
+                          onChange={(e) => setNewTagColor(e.target.value)}
+                          className="h-6 w-6 rounded border border-slate-200 cursor-pointer p-0"
+                          title="Escolher cor da tag"
+                        />
+                        <button
+                          onClick={handleCreateAndAddTag}
+                          disabled={!newTagName.trim()}
+                          className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sidebar Tabs Switcher */}
+              <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 shrink-0">
                 <button
-                  onClick={() => openLeadDetails(activeThread.conversation)}
-                  className="w-full py-2 px-3 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 border border-blue-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                  onClick={() => setRightPanelTab('RESUMO')}
+                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                    rightPanelTab === 'RESUMO'
+                      ? 'border-blue-600 text-blue-600 bg-white'
+                      : 'border-transparent hover:text-slate-800'
+                  }`}
                 >
-                  <Edit3 className="h-3.5 w-3.5" />
-                  <span>Editar Notas & Detalhes</span>
+                  Resumo
                 </button>
                 <button
-                  onClick={(e) => handleDeleteConversation(activeThread.conversation.id, activeThread.conversation.customer_name, e)}
-                  className="w-full py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                  onClick={() => setRightPanelTab('ATIVIDADES')}
+                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                    rightPanelTab === 'ATIVIDADES'
+                      ? 'border-blue-600 text-blue-600 bg-white'
+                      : 'border-transparent hover:text-slate-800'
+                  }`}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Excluir Lead</span>
+                  Timeline
                 </button>
+                <button
+                  onClick={() => setRightPanelTab('FOLLOW_UP')}
+                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                    rightPanelTab === 'FOLLOW_UP'
+                      ? 'border-blue-600 text-blue-600 bg-white'
+                      : 'border-transparent hover:text-slate-800'
+                  }`}
+                >
+                  Follow-up ({leadFollowups.length})
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('NOTAS')}
+                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                    rightPanelTab === 'NOTAS'
+                      ? 'border-blue-600 text-blue-600 bg-white'
+                      : 'border-transparent hover:text-slate-800'
+                  }`}
+                >
+                  Notas ({leadNotes.length})
+                </button>
+              </div>
+
+              {/* Sidebar Tab Body with Scroll */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 bg-white">
+                {/* TAB: RESUMO */}
+                {rightPanelTab === 'RESUMO' && (
+                  <div className="space-y-4">
+                    {/* Next Follow-up Smart Card */}
+                    <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/80 space-y-2 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5 text-amber-600" />
+                          Próximo Follow-up
+                        </span>
+                        {leadFollowups.find((f) => f.status === 'pending') && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-200/60 text-amber-800">
+                            Pendente
+                          </span>
+                        )}
+                      </div>
+
+                      {(() => {
+                        const nextF = leadFollowups.find((f) => f.status === 'pending');
+                        if (nextF) {
+                          const dueDate = new Date(nextF.due_at);
+                          const isOverdue = dueDate.getTime() < Date.now();
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-baseline justify-between">
+                                <span className={`text-xs font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-800'}`}>
+                                  {dueDate.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} • {dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                <span className="text-[10px] text-amber-700 font-semibold capitalize">
+                                  {nextF.type}
+                                </span>
+                              </div>
+                              {nextF.notes && (
+                                <p className="text-[11px] text-slate-600 italic line-clamp-2 bg-white/70 p-1.5 rounded border border-amber-200/50">
+                                  "{nextF.notes}"
+                                </p>
+                              )}
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  onClick={() => handleCompleteFollowup(nextF.id)}
+                                  className="flex-1 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                                >
+                                  <Check className="h-3 w-3" />
+                                  <span>Concluir</span>
+                                </button>
+                                <button
+                                  onClick={() => setShowFollowupModal(true)}
+                                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-medium transition"
+                                >
+                                  Reagendar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="text-center py-2 space-y-1.5">
+                            <p className="text-xs text-slate-500">Nenhum follow-up agendado</p>
+                            <button
+                              onClick={() => setShowFollowupModal(true)}
+                              className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition shadow-2xs"
+                            >
+                              + Agendar Agora
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Commercial Smart Card */}
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 shadow-xs">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <DollarSign className="h-3 w-3 text-emerald-600" />
+                        Visão Comercial
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                          <span className="text-[10px] text-slate-400 block">Total Comprado</span>
+                          <span className="font-bold text-emerald-600 text-sm">
+                            {activeThread.conversation.deal_value || 'R$ 0,00'}
+                          </span>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                          <span className="text-[10px] text-slate-400 block">Pedidos Concluídos</span>
+                          <span className="font-bold text-slate-700 text-sm">0 pedidos</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Product Negotiated Card */}
+                    {activeThread.conversation.product_title && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                          <Store className="h-3 w-3 text-blue-600" />
+                          Produto em Negociação
+                        </span>
+                        <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-100 space-y-1 shadow-2xs">
+                          <div className="text-xs font-bold text-slate-900 line-clamp-2">
+                            {activeThread.conversation.product_title}
+                          </div>
+                          {activeThread.conversation.product_price && (
+                            <div className="text-sm font-black text-emerald-600">
+                              {activeThread.conversation.product_price}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Contact Information */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Dados de Contato
+                      </span>
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Nome do Cliente</span>
+                          <span className="font-semibold text-slate-800">{activeThread.conversation.customer_name}</span>
+                        </div>
+                        {activeThread.conversation.customer_phone && (
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">WhatsApp</span>
+                            <a
+                              href={`https://wa.me/${activeThread.conversation.customer_phone.replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-semibold text-emerald-600 hover:underline flex items-center gap-1"
+                            >
+                              <Phone className="h-3 w-3" />
+                              {activeThread.conversation.customer_phone}
+                            </a>
+                          </div>
+                        )}
+                        {(activeThread.conversation.customer_city || activeThread.conversation.customer_state) && (
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Localização</span>
+                            <span className="font-semibold text-slate-700 flex items-center gap-1">
+                              <MapPin className="h-3 w-3 text-slate-400" />
+                              {[activeThread.conversation.customer_city, activeThread.conversation.customer_state].filter(Boolean).join(' - ')}
+                            </span>
+                          </div>
+                        )}
+                        {activeThread.conversation.customer_address && (
+                          <div>
+                            <span className="text-[10px] text-slate-400 block">Endereço de Entrega</span>
+                            <span className="text-slate-600">{activeThread.conversation.customer_address}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">Primeiro Contato</span>
+                          <span className="text-slate-600">
+                            {new Date(activeThread.conversation.created_at).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Edit Lead Button */}
+                    <button
+                      onClick={() => openLeadDetails(activeThread.conversation)}
+                      className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      <span>Editar Informações Completas</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* TAB: ATIVIDADES / TIMELINE */}
+                {rightPanelTab === 'ATIVIDADES' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-bold text-slate-800">Timeline de Atividades</span>
+                      <button
+                        onClick={() => {
+                          if (activeThread?.conversation?.id) {
+                            setLoadingTimeline(true);
+                            api.getCrmLeadTimeline(activeThread.conversation.id)
+                              .then((tl) => setLeadTimeline(tl || []))
+                              .finally(() => setLoadingTimeline(false));
+                          }
+                        }}
+                        className="text-[10px] text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        <RefreshCw className={`h-2.5 w-2.5 ${loadingTimeline ? 'animate-spin' : ''}`} />
+                        Atualizar
+                      </button>
+                    </div>
+
+                    {loadingTimeline ? (
+                      <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center gap-1.5">
+                        <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                        Carregando timeline...
+                      </div>
+                    ) : leadTimeline.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400">
+                        Nenhum evento registrado nesta conversa ainda.
+                      </div>
+                    ) : (
+                      <div className="relative pl-4 space-y-4 border-l-2 border-slate-200">
+                        {leadTimeline.map((evt) => {
+                          const isStatus = evt.event_type === 'LEAD_STATUS_CHANGED';
+                          const isTag = evt.event_type.startsWith('TAG_');
+                          const isNote = evt.event_type === 'NOTE_ADDED';
+                          const isFollowup = evt.event_type.startsWith('FOLLOWUP_');
+
+                          return (
+                            <div key={evt.id} className="relative group">
+                              {/* Timeline dot */}
+                              <div className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white ${
+                                isStatus
+                                  ? 'bg-blue-600'
+                                  : isTag
+                                  ? 'bg-purple-600'
+                                  : isFollowup
+                                  ? 'bg-amber-500'
+                                  : isNote
+                                  ? 'bg-emerald-500'
+                                  : 'bg-slate-400'
+                              }`} />
+
+                              <div className="text-xs">
+                                <div className="flex items-baseline justify-between">
+                                  <span className="font-bold text-slate-800">
+                                    {evt.title || evt.event_type}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                {evt.description && (
+                                  <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                    {evt.description}
+                                  </p>
+                                )}
+                                <span className="text-[9px] text-slate-400 block mt-0.5">
+                                  {new Date(evt.created_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
+                                  {evt.author_name ? ` • por ${evt.author_name}` : ''}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB: FOLLOW-UP */}
+                {rightPanelTab === 'FOLLOW_UP' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-bold text-slate-800">Follow-ups Agendados</span>
+                      <button
+                        onClick={() => setShowFollowupModal(true)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Novo</span>
+                      </button>
+                    </div>
+
+                    {leadFollowups.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400 space-y-2">
+                        <Clock className="h-8 w-8 text-slate-300 mx-auto" />
+                        <p>Nenhum follow-up cadastrado para este cliente.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {leadFollowups.map((f) => {
+                          const isDone = f.status === 'completed';
+                          const isOverdue = !isDone && new Date(f.due_at).getTime() < Date.now();
+
+                          return (
+                            <div
+                              key={f.id}
+                              className={`p-3 rounded-xl border transition shadow-2xs space-y-1.5 ${
+                                isDone
+                                  ? 'bg-slate-50 border-slate-200 opacity-60'
+                                  : isOverdue
+                                  ? 'bg-rose-50/80 border-rose-200'
+                                  : 'bg-white border-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-800 capitalize flex items-center gap-1.5">
+                                  <Clock className={`h-3 w-3 ${isOverdue ? 'text-rose-600' : 'text-amber-600'}`} />
+                                  {f.type}
+                                </span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  isDone
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : isOverdue
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {isDone ? 'Concluído' : isOverdue ? 'Atrasado' : 'Agendado'}
+                                </span>
+                              </div>
+
+                              <div className="text-[11px] text-slate-600 font-medium">
+                                📅 {new Date(f.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} às {new Date(f.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+
+                              {f.notes && (
+                                <p className="text-[11px] text-slate-600 italic bg-slate-50 p-1.5 rounded border border-slate-200/60">
+                                  {f.notes}
+                                </p>
+                              )}
+
+                              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                                {!isDone && (
+                                  <button
+                                    onClick={() => handleCompleteFollowup(f.id)}
+                                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    <span>Concluir</span>
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteFollowup(f.id)}
+                                  className="text-[11px] text-slate-400 hover:text-rose-600"
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB: NOTAS INTERNAS */}
+                {rightPanelTab === 'NOTAS' && (
+                  <div className="space-y-3">
+                    <div className="border-b border-slate-100 pb-2">
+                      <span className="text-xs font-bold text-slate-800">Notas Internas da Equipe</span>
+                      <p className="text-[11px] text-slate-400">Estas anotações não são visíveis para o cliente.</p>
+                    </div>
+
+                    {/* New note box */}
+                    <div className="space-y-1.5">
+                      <textarea
+                        value={newNoteInput}
+                        onChange={(e) => setNewNoteInput(e.target.value)}
+                        placeholder="Escreva uma nota interna (ex: cliente quer fechar após o dia 15)..."
+                        rows={2}
+                        className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white resize-none"
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleCreateLeadNote}
+                          disabled={savingNote || !newNoteInput.trim()}
+                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 transition shadow-2xs"
+                        >
+                          {savingNote ? 'Salvando...' : 'Salvar Nota'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Notes List */}
+                    <div className="space-y-2 pt-2">
+                      {leadNotes.length === 0 ? (
+                        <div className="py-6 text-center text-xs text-slate-400">
+                          Nenhuma nota interna registrada para este lead.
+                        </div>
+                      ) : (
+                        leadNotes.map((n) => (
+                          <div key={n.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 shadow-2xs">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400">
+                              <span className="font-semibold text-slate-700">{n.author_name || 'Atendente'}</span>
+                              <div className="flex items-center gap-2">
+                                <span>{new Date(n.created_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })} {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <button
+                                  onClick={() => handleDeleteLeadNote(n.id)}
+                                  className="hover:text-rose-600 transition"
+                                  title="Excluir nota"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                              {n.content}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2503,126 +3363,512 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         </div>
       )}
 
-      {/* MODAL: LEAD DETAILS & OBSERVATIONS */}
+      {/* MODAL: LEAD DETAILS & OBSERVATIONS - Clean White */}
       {detailsModalLead && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-slate-800">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/20">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
                   <FileText className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">
-                    Editar Dados do Lead
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Editar Ficha do Lead
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    {detailsModalLead.customer_name} • {detailsModalLead.product_title || 'Marketplace'}
+                  <p className="text-xs text-slate-500">
+                    {detailsModalLead.customer_name} • {detailsModalLead.product_title || 'Canal Direto'}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setDetailsModalLead(null)}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-3.5 max-h-[75vh] overflow-y-auto">
               {/* Status */}
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5">
-                  Etapa do Funil de Vendas:
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Etapa do Funil Comercial:
                 </label>
                 <select
                   value={modalStatus}
                   onChange={(e) => setModalStatus(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-semibold"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
                 >
-                  <option value="novo">🔵 Novo Lead</option>
-                  <option value="em_negociacao">🟡 Em Negociação</option>
-                  <option value="fechado">🟢 Venda Fechada</option>
-                  <option value="perdido">🔴 Perdido / Desistência</option>
+                  {statuses.length > 0 ? (
+                    statuses.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="novo">🔵 Novo Lead</option>
+                      <option value="em_negociacao">🟡 Em Negociação</option>
+                      <option value="fechado">🟢 Venda Fechada</option>
+                      <option value="perdido">🔴 Perdido</option>
+                    </>
+                  )}
                 </select>
               </div>
 
-              {/* Phone / WhatsApp */}
+              {/* Phone & Atendente */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    WhatsApp / Telefone:
+                  </label>
+                  <input
+                    type="text"
+                    value={modalPhone}
+                    onChange={(e) => setModalPhone(e.target.value)}
+                    placeholder="(11) 98765-4321"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Atendente / Responsável:
+                  </label>
+                  <input
+                    type="text"
+                    value={modalAssignedTo}
+                    onChange={(e) => setModalAssignedTo(e.target.value)}
+                    placeholder="Nome do operador"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Cidade & Estado */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Cidade:
+                  </label>
+                  <input
+                    type="text"
+                    value={modalCity}
+                    onChange={(e) => setModalCity(e.target.value)}
+                    placeholder="Belo Horizonte"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Estado (UF):
+                  </label>
+                  <input
+                    type="text"
+                    value={modalState}
+                    onChange={(e) => setModalState(e.target.value)}
+                    placeholder="MG"
+                    maxLength={2}
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* Endereço */}
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Phone className="h-3 w-3 text-emerald-400" />
-                    Telefone / WhatsApp do Cliente:
-                  </span>
-                  {modalPhone && (
-                    <a
-                      href={`https://wa.me/${modalPhone.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
-                    >
-                      <ExternalLink className="h-2.5 w-2.5" />
-                      Testar WhatsApp Web
-                    </a>
-                  )}
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Endereço Completo de Entrega:
                 </label>
                 <input
                   type="text"
-                  value={modalPhone}
-                  onChange={(e) => setModalPhone(e.target.value)}
-                  placeholder="Ex: (11) 98765-4321"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  value={modalAddress}
+                  onChange={(e) => setModalAddress(e.target.value)}
+                  placeholder="Rua, número, complemento, bairro"
+                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               {/* Deal Value */}
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-emerald-400" />
+                <label className="text-xs font-bold text-slate-700 block mb-1">
                   Valor Acordado / Proposta:
                 </label>
                 <input
                   type="text"
                   value={modalDealValue}
                   onChange={(e) => setModalDealValue(e.target.value)}
-                  placeholder="Ex: R$ 79,00 à vista"
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  placeholder="R$ 149,90"
+                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              {/* Notes / Anotações */}
+              {/* Notes */}
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1">
-                  <Edit3 className="h-3 w-3 text-amber-400" />
-                  Observações e Anotações Importantes:
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Observações Gerais do Cliente:
                 </label>
                 <textarea
                   value={modalNotes}
                   onChange={(e) => setModalNotes(e.target.value)}
-                  placeholder="Ex: Cliente quer retirar no shopping às 15h, prefere pagamento via PIX..."
-                  rows={4}
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500 resize-none placeholder:text-slate-600"
+                  placeholder="Informações relevantes sobre este cliente ou pedido..."
+                  rows={3}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-3">
+            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
               <button
                 onClick={() => setDetailsModalLead(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveLeadDetails}
                 disabled={savingLeadDetails}
-                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-blue-600/25"
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition shadow-xs"
               >
                 {savingLeadDetails ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                 <span>Salvar Informações</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE FOLLOW-UP - Clean White */}
+      {showFollowupModal && activeThread && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-slate-800">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-amber-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-100 text-amber-700 border border-amber-200">
+                  <Clock className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Agendar Follow-up
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Cliente: {activeThread.conversation.customer_name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFollowupModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {/* Quick Shortcuts */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">
+                  Atalhos de Horário:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setQuickFollowupDate(0, 15, 0)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+                  >
+                    Hoje às 15h
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickFollowupDate(1, 10, 0)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+                  >
+                    Amanhã às 10h
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickFollowupDate(2, 14, 30)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+                  >
+                    Em 2 dias
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickFollowupDate(3, 14, 30)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+                  >
+                    Em 3 dias
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickFollowupDate(7, 14, 30)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition"
+                  >
+                    Em 7 dias
+                  </button>
+                </div>
+              </div>
+
+              {/* Date & Time Picker */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Data e Horário:
+                </label>
+                <input
+                  type="datetime-local"
+                  value={followupForm.scheduled_at}
+                  onChange={(e) => setFollowupForm({ ...followupForm, scheduled_at: e.target.value })}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                />
+              </div>
+
+              {/* Type & Priority */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Tipo de Contato:
+                  </label>
+                  <select
+                    value={followupForm.followup_type}
+                    onChange={(e) => setFollowupForm({ ...followupForm, followup_type: e.target.value })}
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="WhatsApp">💬 WhatsApp</option>
+                    <option value="Ligar">📞 Ligar</option>
+                    <option value="Mensagem">✉️ Mensagem</option>
+                    <option value="Pagamento">💰 Pagamento</option>
+                    <option value="Pedido">📦 Pedido</option>
+                    <option value="Orçamento">📄 Orçamento</option>
+                    <option value="Retorno">🔄 Retorno</option>
+                    <option value="Outro">📌 Outro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Prioridade:
+                  </label>
+                  <select
+                    value={followupForm.priority}
+                    onChange={(e) => setFollowupForm({ ...followupForm, priority: e.target.value })}
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="normal">⚪ Normal</option>
+                    <option value="high">🟡 Alta</option>
+                    <option value="urgent">🔴 Urgente</option>
+                    <option value="low">🟢 Baixa</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Observações do Follow-up:
+                </label>
+                <textarea
+                  value={followupForm.notes}
+                  onChange={(e) => setFollowupForm({ ...followupForm, notes: e.target.value })}
+                  placeholder="Ex: Cobrar retorno sobre a proposta de miniaturas..."
+                  rows={2}
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowFollowupModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateFollowup}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Agendar Follow-up</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GLOBAL FOLLOW-UPS CENTER - Clean White */}
+      {showGlobalFollowupsModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-slate-800 flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200">
+                  <Clock className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    Central de Follow-ups da Equipe
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                      {allFollowups.filter((f) => f.status === 'pending').length} pendentes
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Acompanhe todos os retornos comerciais e cobranças agendadas
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGlobalFollowupsModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex border-b border-slate-200 bg-slate-50 px-4 text-xs font-bold text-slate-500 shrink-0 gap-2">
+              {[
+                { id: 'hoje', label: 'Hoje' },
+                { id: 'atrasados', label: 'Atrasados' },
+                { id: 'amanha', label: 'Amanhã' },
+                { id: 'semana', label: 'Esta Semana' },
+                { id: 'todos', label: 'Todos Pendentes' },
+                { id: 'concluidos', label: 'Concluídos' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setGlobalFollowupFilter(tab.id as any)}
+                  className={`py-2.5 px-3 transition border-b-2 ${
+                    globalFollowupFilter === tab.id
+                      ? 'border-amber-600 text-amber-700 font-bold bg-white'
+                      : 'border-transparent hover:text-slate-800'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-2.5">
+              {(() => {
+                const now = Date.now();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const dayAfterTomorrow = new Date(today);
+                dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+                const weekEnd = new Date(today);
+                weekEnd.setDate(weekEnd.getDate() + 7);
+
+                const filtered = allFollowups.filter((f) => {
+                  const dueDate = new Date(f.due_at);
+                  const isPending = f.status === 'pending';
+
+                  if (globalFollowupFilter === 'concluidos') return f.status === 'completed';
+                  if (!isPending) return false;
+
+                  if (globalFollowupFilter === 'atrasados') return dueDate.getTime() < now;
+                  if (globalFollowupFilter === 'hoje') return dueDate >= today && dueDate < tomorrow;
+                  if (globalFollowupFilter === 'amanha') return dueDate >= tomorrow && dueDate < dayAfterTomorrow;
+                  if (globalFollowupFilter === 'semana') return dueDate >= today && dueDate <= weekEnd;
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-slate-400 text-xs space-y-2">
+                      <CheckCircle2 className="h-8 w-8 text-slate-300 mx-auto" />
+                      <p>Nenhum follow-up encontrado nesta categoria.</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map((fl) => {
+                  const isDone = fl.status === 'completed';
+                  const isOverdue = !isDone && new Date(fl.due_at).getTime() < now;
+
+                  return (
+                    <div
+                      key={fl.id}
+                      className={`p-3.5 rounded-xl border transition flex items-center justify-between gap-3 shadow-xs ${
+                        isDone
+                          ? 'bg-slate-50 border-slate-200 opacity-70'
+                          : isOverdue
+                          ? 'bg-rose-50/70 border-rose-200'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-xs text-slate-900 truncate">
+                            {fl.customer_name || 'Cliente'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-amber-100 text-amber-800 capitalize">
+                            {fl.type}
+                          </span>
+                          {isOverdue && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-rose-500 text-white">
+                              Atrasado
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-3">
+                          <span>
+                            📅 {new Date(fl.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })} às {new Date(fl.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {fl.customer_phone && <span>📞 {fl.customer_phone}</span>}
+                        </div>
+                        {fl.notes && (
+                          <p className="text-[11px] text-slate-600 italic mt-1 line-clamp-1">
+                            "{fl.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {!isDone && (
+                          <button
+                            onClick={() => handleCompleteFollowup(fl.id)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                            title="Marcar como concluído"
+                          >
+                            <Check className="h-3 w-3" />
+                            <span>Concluir</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (fl.conversation_id) {
+                              setSelectedId(fl.conversation_id);
+                              setCurrentTab('inbox');
+                              setShowGlobalFollowupsModal(false);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold transition"
+                          title="Abrir chat deste cliente"
+                        >
+                          Abrir Chat
+                        </button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+              <button
+                onClick={() => setShowGlobalFollowupsModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition"
+              >
+                Fechar
               </button>
             </div>
           </div>

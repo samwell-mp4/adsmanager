@@ -130,6 +130,12 @@ export interface CrmConversation {
   external_id: string;
   customer_name: string;
   customer_avatar: string | null;
+  customer_phone?: string | null;
+  deal_value?: string | null;
+  customer_city?: string | null;
+  customer_state?: string | null;
+  customer_address?: string | null;
+  customer_assigned_to?: string | null;
   product_title: string | null;
   product_price: string | null;
   product_image: string | null;
@@ -137,8 +143,10 @@ export interface CrmConversation {
   last_message: string | null;
   last_message_at: Date | string;
   unread_count: number;
-  lead_status: LeadStatus;
+  lead_status: LeadStatus | string;
   notes: string | null;
+  tags?: CrmTag[];
+  next_followup?: CrmFollowup | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -222,4 +230,68 @@ export interface CrmInsightData {
   raw_data?: any;
   synced_at?: Date | string;
   created_at?: Date | string;
+}
+
+export interface CrmCustomStatus {
+  id: number;
+  name: string;
+  slug: string;
+  color: string;
+  icon?: string;
+  position: number;
+  is_initial: boolean;
+  is_won: boolean;
+  is_lost: boolean;
+  is_active: boolean;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export interface CrmTag {
+  id: number;
+  name: string;
+  slug: string;
+  color: string;
+  created_at: Date | string;
+}
+
+export interface CrmNote {
+  id: number;
+  conversation_id: number;
+  author_name: string;
+  note_text: string;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export type FollowupType = 'WhatsApp' | 'Ligar' | 'Mensagem' | 'Pagamento' | 'Pedido' | 'Orçamento' | 'Retorno' | 'Outro';
+export type FollowupPriority = 'baixa' | 'normal' | 'alta' | 'urgente';
+export type FollowupStatus = 'pending' | 'completed' | 'cancelled';
+
+export interface CrmFollowup {
+  id: number;
+  conversation_id: number;
+  profile_id: number;
+  scheduled_at: Date | string;
+  followup_type: FollowupType;
+  priority: FollowupPriority;
+  notes?: string | null;
+  assignee?: string | null;
+  status: FollowupStatus;
+  completed_at?: Date | string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  customer_name?: string;
+  customer_phone?: string;
+  platform?: string;
+}
+
+export interface CrmEvent {
+  id: number;
+  conversation_id: number;
+  event_type: string;
+  title: string;
+  description?: string | null;
+  metadata?: Record<string, any>;
+  created_at: Date | string;
 }

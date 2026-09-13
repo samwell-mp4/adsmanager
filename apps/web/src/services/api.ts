@@ -267,6 +267,7 @@ export const api = {
     profile_id?: number;
     platform?: string;
     lead_status?: string;
+    tag_id?: number;
     search?: string;
     marketplace_only?: boolean;
   }): Promise<any[]> {
@@ -274,6 +275,7 @@ export const api = {
     if (params?.profile_id) query.append('profile_id', String(params.profile_id));
     if (params?.platform) query.append('platform', params.platform);
     if (params?.lead_status) query.append('lead_status', params.lead_status);
+    if (params?.tag_id) query.append('tag_id', String(params.tag_id));
     if (params?.search) query.append('search', params.search);
     if (params?.marketplace_only) query.append('marketplace_only', 'true');
 
@@ -302,12 +304,25 @@ export const api = {
     lead_status?: string,
     notes?: string,
     customer_phone?: string,
-    deal_value?: string
+    deal_value?: string,
+    customer_city?: string,
+    customer_state?: string,
+    customer_address?: string,
+    customer_assigned_to?: string
   ): Promise<any> {
     const res = await fetch(`${API_BASE}/crm/conversations/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_status, notes, customer_phone, deal_value }),
+      body: JSON.stringify({
+        lead_status,
+        notes,
+        customer_phone,
+        deal_value,
+        customer_city,
+        customer_state,
+        customer_address,
+        customer_assigned_to
+      }),
     });
     const data = await handleResponse<any>(res);
     return data?.data !== undefined ? data.data : data;
@@ -381,6 +396,162 @@ export const api = {
     const res = await fetch(url);
     return handleResponse<{ success: boolean; data: any }>(res);
   },
+
+  // Statuses Personalizados
+  async getCrmStatuses(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/crm/statuses`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async createCrmStatus(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/statuses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async updateCrmStatus(id: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/statuses/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCrmStatus(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/crm/statuses/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  // Tags Personalizadas
+  async getCrmTags(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/crm/tags`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async createCrmTag(name: string, color?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/tags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, color }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCrmTag(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/crm/tags/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  async addCrmLeadTag(conversationId: number, tag_id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/tags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_id }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async removeCrmLeadTag(conversationId: number, tagId: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/tags/${tagId}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  // Notas Internas
+  async getCrmLeadNotes(conversationId: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/notes`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async createCrmLeadNote(conversationId: number, note_text: string, author_name = 'Atendente'): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note_text, author_name }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCrmLeadNote(noteId: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/crm/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  // Follow-ups & Agendamentos
+  async getCrmFollowups(params?: { status?: string; timeframe?: string; profile_id?: number }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.append('status', params.status);
+    if (params?.timeframe) query.append('timeframe', params.timeframe);
+    if (params?.profile_id) query.append('profile_id', String(params.profile_id));
+    const res = await fetch(`${API_BASE}/crm/followups?${query.toString()}`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async getCrmLeadFollowups(conversationId: number): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/followups`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async createCrmFollowup(conversationId: number, data: {
+    profile_id?: number;
+    scheduled_at: string;
+    followup_type?: string;
+    priority?: string;
+    notes?: string;
+    assignee?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/followups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async updateCrmFollowup(id: number, data: {
+    status?: string;
+    scheduled_at?: string;
+    notes?: string;
+    priority?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/followups/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCrmFollowup(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/crm/followups/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  // Timeline de Atividades do Cliente
+  async getCrmLeadTimeline(conversationId: number, limit = 50): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${conversationId}/timeline?limit=${limit}`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
 };
+
 
 
