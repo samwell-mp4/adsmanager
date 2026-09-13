@@ -295,3 +295,97 @@ export interface CrmEvent {
   metadata?: Record<string, any>;
   created_at: Date | string;
 }
+
+// ==========================================
+// Catalog Types (Fase 3)
+// ==========================================
+
+export interface CatalogCategory {
+  id: number;
+  name: string;
+  slug: string;
+  icon?: string;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export interface CatalogProductVariant {
+  id: number;
+  product_id: number;
+  sku?: string | null;
+  name: string;
+  variant_type: string;
+  price?: number | null;
+  stock: number;
+  created_at: Date | string;
+}
+
+export interface CatalogProductMedia {
+  id: number;
+  product_id: number;
+  media_type: 'image' | 'video' | 'document';
+  url: string;
+  thumbnail_url?: string | null;
+  position: number;
+  created_at: Date | string;
+}
+
+export interface CatalogProduct {
+  id: number;
+  sku?: string | null;
+  name: string;
+  description?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
+  brand?: string | null;
+  price: number;
+  promotional_price?: number | null;
+  cost_price?: number | null;
+  stock: number;
+  main_image?: string | null;
+  is_active: boolean;
+  notes?: string | null;
+  variants?: CatalogProductVariant[];
+  media?: CatalogProductMedia[];
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export interface CreateProductInput {
+  sku?: string;
+  name: string;
+  description?: string;
+  category_id?: number | null;
+  brand?: string;
+  price: number;
+  promotional_price?: number | null;
+  cost_price?: number | null;
+  stock?: number;
+  main_image?: string;
+  is_active?: boolean;
+  notes?: string;
+  variants?: Array<{
+    sku?: string;
+    name: string;
+    variant_type?: string;
+    price?: number;
+    stock?: number;
+  }>;
+  media?: Array<{
+    media_type?: 'image' | 'video' | 'document';
+    url: string;
+    thumbnail_url?: string;
+    position?: number;
+  }>;
+}
+
+export interface ProductFilterOptions {
+  search?: string;
+  category_id?: number;
+  brand?: string;
+  is_active?: boolean;
+  in_stock?: boolean;
+  page?: number;
+  limit?: number;
+}
+

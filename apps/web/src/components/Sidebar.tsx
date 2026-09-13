@@ -9,7 +9,8 @@ import {
   Activity, 
   ChevronLeft, 
   ChevronRight,
-  MessageSquare
+  MessageSquare,
+  Package
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -39,7 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = () => {
 
   const navItems = [
     { name: 'Perfis de Navegador', path: '/', icon: Layers, badge: null },
-    { name: 'CRM & Chats (Inbox)', path: '/crm', icon: MessageSquare, badge: 'Novo' },
+    { name: 'CRM & Chats (Inbox)', path: '/crm', icon: MessageSquare, badge: null },
+    { name: 'Catálogo de Produtos', path: '/catalog', icon: Package, badge: 'Novo' },
     { name: 'Gerenciador de Proxies', path: '/proxies', icon: Shield, badge: null },
     { name: 'Extensões do Google', path: '/extensions', icon: Puzzle, badge: null },
     { name: 'Grupos & Campanhas', path: '/groups', icon: FolderKanban, badge: null },

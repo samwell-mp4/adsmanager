@@ -551,6 +551,108 @@ export const api = {
     const data = await handleResponse<any>(res);
     return Array.isArray(data) ? data : (data?.data || []);
   },
+
+  // ==========================================
+  // CENTRAL DE CATÁLOGO (Fase 3)
+  // ==========================================
+
+  async getCatalogCategories(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/catalog/categories`);
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
+  },
+
+  async createCatalogCategory(name: string, icon = 'Tag'): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/categories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, icon }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async updateCatalogCategory(id: number, name: string, icon?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/categories/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, icon }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCatalogCategory(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/catalog/categories/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  async getCatalogProducts(options?: {
+    search?: string;
+    category_id?: number;
+    brand?: string;
+    is_active?: boolean;
+    in_stock?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{ products: any[]; total: number; pages: number }> {
+    const query = new URLSearchParams();
+    if (options?.search) query.set('search', options.search);
+    if (options?.category_id) query.set('category_id', String(options.category_id));
+    if (options?.brand) query.set('brand', options.brand);
+    if (options?.is_active !== undefined) query.set('is_active', String(options.is_active));
+    if (options?.in_stock !== undefined) query.set('in_stock', String(options.in_stock));
+    if (options?.page) query.set('page', String(options.page));
+    if (options?.limit) query.set('limit', String(options.limit));
+
+    const res = await fetch(`${API_BASE}/catalog/products?${query.toString()}`);
+    const json = await handleResponse<any>(res);
+    return {
+      products: Array.isArray(json?.data) ? json.data : [],
+      total: json?.meta?.total || 0,
+      pages: json?.meta?.pages || 1,
+    };
+  },
+
+  async getCatalogProduct(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/products/${id}`);
+    const json = await handleResponse<any>(res);
+    return json?.data || null;
+  },
+
+  async createCatalogProduct(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async updateCatalogProduct(id: number, data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/products/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteCatalogProduct(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/catalog/products/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  async importCatalogProducts(items: any[]): Promise<{ imported: number; errors: string[] }> {
+    const res = await fetch(`${API_BASE}/catalog/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    return handleResponse<any>(res);
+  },
 };
 
 

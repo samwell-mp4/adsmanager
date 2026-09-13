@@ -8,6 +8,7 @@ import { ProxiesPage } from './pages/ProxiesPage.js';
 import { ExtensionsPage } from './pages/ExtensionsPage.js';
 import { GroupsPage } from './pages/GroupsPage.js';
 import { CrmPage } from './pages/CrmPage.js';
+import { CatalogPage } from './pages/CatalogPage.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,6 +29,7 @@ export const App: React.FC = () => {
             <Routes>
               <Route path="/" element={<div className="h-full overflow-y-auto"><ProfilesPage /></div>} />
               <Route path="/crm" element={<CrmPage />} />
+              <Route path="/catalog" element={<CatalogPage />} />
               <Route path="/profiles/:id" element={<div className="h-full overflow-y-auto"><ProfileDetailPage /></div>} />
               <Route path="/proxies" element={<div className="h-full overflow-y-auto"><ProxiesPage /></div>} />
               <Route path="/extensions" element={<div className="h-full overflow-y-auto"><ExtensionsPage /></div>} />
