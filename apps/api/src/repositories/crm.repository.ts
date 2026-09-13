@@ -638,6 +638,51 @@ export class CrmRepository {
       client.release();
     }
   }
+
+  /**
+   * Bulk updates lead status for multiple conversations
+   */
+  async bulkUpdateStatus(ids: number[], status: LeadStatus): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const client = await pool.connect();
+    try {
+      const res = await client.query(
+        `UPDATE crm_conversations SET lead_status = $1, updated_at = NOW() WHERE id = ANY($2::int[]);`,
+        [status, ids]
+      );
+      return res.rowCount || 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Bulk deletes multiple conversations and adds them to blacklist
+   */
+  async bulkDeleteConversations(ids: number[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const client = await pool.connect();
+    try {
+      // Obter platforms e external_ids para a blacklist
+      const check = await client.query(
+        `SELECT platform, external_id FROM crm_conversations WHERE id = ANY($1::int[])`,
+        [ids]
+      );
+      for (const row of check.rows) {
+        await client.query(`
+          INSERT INTO crm_deleted_conversations (platform, external_id)
+          VALUES ($1, $2)
+          ON CONFLICT (platform, external_id) DO UPDATE SET deleted_at = NOW();
+        `, [row.platform, row.external_id]);
+      }
+
+      const res = await client.query(`DELETE FROM crm_conversations WHERE id = ANY($1::int[]);`, [ids]);
+      return res.rowCount || 0;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 export const crmRepository = new CrmRepository();
+

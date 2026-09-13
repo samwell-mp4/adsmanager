@@ -326,5 +326,31 @@ export const api = {
     });
     return handleResponse<{ success: boolean; result: any }>(res);
   },
+
+  async syncEvolutionWhatsApp(): Promise<{ success: boolean; message: string; stats?: any }> {
+    const res = await fetch(`${API_BASE}/crm/evolution/sync`, {
+      method: 'POST',
+    });
+    return handleResponse<{ success: boolean; message: string; stats?: any }>(res);
+  },
+
+  async bulkUpdateCrmStatus(ids: number[], lead_status: string): Promise<{ success: boolean; updated_count: number }> {
+    const res = await fetch(`${API_BASE}/crm/conversations/bulk-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, lead_status }),
+    });
+    return handleResponse<{ success: boolean; updated_count: number }>(res);
+  },
+
+  async bulkDeleteCrmConversations(ids: number[]): Promise<{ success: boolean; deleted_count: number }> {
+    const res = await fetch(`${API_BASE}/crm/conversations/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    return handleResponse<{ success: boolean; deleted_count: number }>(res);
+  },
 };
+
 

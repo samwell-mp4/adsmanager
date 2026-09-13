@@ -1,8 +1,10 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import AdmZip from 'adm-zip';
 import { crmService } from '../services/crm.service.js';
+import { evolutionService } from '../services/evolution.service.js';
 import { generateCrmExtensionFiles } from '../services/crm-extension-generator.js';
 import { CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
+
 
 export async function webhookHandler(
   req: FastifyRequest<{ Body: CrmWebhookPayload }>,
@@ -220,4 +222,63 @@ export async function testWebhookForwardHandler(
     return reply.status(500).send({ success: false, error: err.message });
   }
 }
+
+export async function syncEvolutionHandler(
+  _req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const result = await evolutionService.syncWhatsAppChats();
+    return reply.send({ success: true, message: 'Conversas do WhatsApp sincronizadas com sucesso!', stats: result });
+  } catch (err: any) {
+    console.error('[CrmController] Erro na sincronização do Evolution:', err);
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function evolutionWebhookHandler(
+  req: FastifyRequest<{ Body: any }>,
+  reply: FastifyReply
+) {
+  try {
+    const result = await evolutionService.handleWebhook(req.body);
+    return reply.send({ success: true, result });
+  } catch (err: any) {
+    console.error('[CrmController] Erro no webhook do Evolution:', err);
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function bulkUpdateStatusHandler(
+  req: FastifyRequest<{ Body: { ids: number[]; lead_status: LeadStatus } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { ids, lead_status } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0 || !lead_status) {
+      return reply.status(400).send({ success: false, error: 'Parâmetros ids e lead_status são obrigatórios' });
+    }
+    const updatedCount = await crmService.bulkUpdateStatus(ids, lead_status);
+    return reply.send({ success: true, updated_count: updatedCount });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function bulkDeleteHandler(
+  req: FastifyRequest<{ Body: { ids: number[] } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.status(400).send({ success: false, error: 'Parâmetro ids obrigatório' });
+    }
+    const deletedCount = await crmService.bulkDelete(ids);
+    return reply.send({ success: true, deleted_count: deletedCount });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
 

@@ -488,7 +488,148 @@ function scrapeOlx() {
   return conversations;
 }
 
-// 4. Executador Principal da Varredura
+// 4. Parser do Instagram Direct (instagram.com/direct/inbox/ e /direct/t/*)
+function scrapeInstagram() {
+  const conversations = [];
+  const seenIds = new Set();
+
+  // Links da lista lateral de conversas do Direct
+  const threadLinks = Array.from(document.querySelectorAll('a[href*="/direct/t/"]'));
+
+  for (let i = 0; i < threadLinks.length; i++) {
+    const link = threadLinks[i];
+    try {
+      const href = link.getAttribute('href') || '';
+      const match = href.match(/\/direct\/t\/([^/?#]+)/);
+      if (!match) continue;
+
+      const threadId = match[1];
+      if (seenIds.has(threadId)) continue;
+      seenIds.add(threadId);
+
+      // Nome do perfil / Usuário
+      let customerName = 'Usuário Instagram';
+      const spans = Array.from(link.querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
+      if (spans.length > 0) {
+        // Geralmente o primeiro span com texto não numérico é o nome
+        const nameCandidate = spans.find(s => !s.match(/^\d+\s*(m|h|d|sem|s)$/i) && !s.toLowerCase().includes('ativo'));
+        if (nameCandidate) customerName = nameCandidate;
+      }
+
+      // Avatar
+      const img = link.querySelector('img');
+      const customerAvatar = img ? img.src : null;
+
+      // Última mensagem e tempo relativo
+      let lastMessage = '';
+      let rawTimeStr = '';
+
+      for (const text of spans) {
+        if (text.match(/(?:·|-|\s|^)(\d+)\s*(s|seg|min|m|h|hora|horas|d|dia|dias|sem|semana|semanas|mês|mes|meses|a|ano|anos)(?:\b|$)/i)) {
+          rawTimeStr = text;
+        } else if (text !== customerName && text.length > 1 && !text.toLowerCase().includes('ativo')) {
+          lastMessage = text;
+        }
+      }
+
+      const calculatedTime = parseFacebookRelativeTime(rawTimeStr, i);
+
+      // Verificar se há ponto azul / não lida
+      const isUnread = Boolean(
+        link.querySelector('[aria-label*="não lida"], [aria-label*="unread"]') ||
+        link.innerHTML.includes('background-color: rgb(0, 149, 246)') ||
+        link.innerHTML.includes('rgb(0, 149, 246)')
+      );
+
+      conversations.push({
+        external_id: threadId,
+        customer_name: customerName,
+        customer_avatar: customerAvatar,
+        last_message: lastMessage,
+        last_message_at: calculatedTime,
+        unread: isUnread,
+        messages: []
+      });
+    } catch (e) {
+      console.warn('[CRM Content] Erro ao analisar conversa do Instagram:', e);
+    }
+  }
+
+  // Se estiver com um chat específico aberto no Direct (/direct/t/:threadId)
+  const currentUrl = location.href;
+  const matchCurrent = currentUrl.match(/\/direct\/t\/([^/?#]+)/);
+  const activeThreadId = matchCurrent ? matchCurrent[1] : null;
+
+  if (activeThreadId) {
+    let activeConv = conversations.find(c => c.external_id === activeThreadId);
+
+    // Pegar nome do cabeçalho da conversa se disponível
+    const headerTitleEl = document.querySelector('div[role="main"] h2, div[role="main"] h1, div[role="main"] header span');
+    const headerName = headerTitleEl ? headerTitleEl.textContent.trim() : null;
+
+    if (!activeConv) {
+      activeConv = {
+        external_id: activeThreadId,
+        customer_name: headerName || 'Usuário Instagram',
+        customer_avatar: null,
+        last_message: '',
+        last_message_at: new Date().toISOString(),
+        messages: []
+      };
+      conversations.push(activeConv);
+    } else if (headerName && activeConv.customer_name === 'Usuário Instagram') {
+      activeConv.customer_name = headerName;
+    }
+
+    // Extrair mensagens da tela do chat ativo
+    try {
+      const msgElements = Array.from(document.querySelectorAll('div[role="main"] div[dir="auto"], div[role="main"] span[dir="auto"]'));
+      const parsedMessages = [];
+
+      for (const el of msgElements) {
+        const text = el.textContent.trim();
+        if (!text || text.length === 0) continue;
+
+        // Ignorar textos de cabeçalho / botões comuns do Instagram
+        const lower = text.toLowerCase();
+        if (
+          lower === 'detalhes' ||
+          lower === 'informações' ||
+          lower.includes('chamada de vídeo') ||
+          lower.includes('chamada de áudio') ||
+          lower.includes('ativo há') ||
+          lower.includes('ativo(a) agora')
+        ) {
+          continue;
+        }
+
+        let isMe = false;
+        const rect = el.getBoundingClientRect();
+        // Mensagens enviadas pelo usuário ficam alinhadas à direita da tela de chat
+        if (rect.right > window.innerWidth * 0.58) {
+          isMe = true;
+        }
+
+        parsedMessages.push({
+          sender_type: isMe ? 'me' : 'customer',
+          content: text,
+          sent_at: new Date().toISOString()
+        });
+      }
+
+      activeConv.messages = parsedMessages.slice(-30);
+      if (activeConv.messages.length > 0 && !activeConv.last_message) {
+        activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
+      }
+    } catch (e) {
+      console.warn('[CRM Content] Erro ao extrair mensagens do chat do Instagram:', e);
+    }
+  }
+
+  return conversations;
+}
+
+// 5. Executador Principal da Varredura
 function scrapeActiveChats() {
   if (isScraping) return [];
   isScraping = true;
@@ -497,18 +638,24 @@ function scrapeActiveChats() {
     injectFloatingActionBadge();
     const host = location.hostname;
     let conversations = [];
+    let platform = 'facebook';
 
     if (host.includes('facebook.com')) {
       conversations = scrapeFacebook();
+      platform = 'facebook';
+    } else if (host.includes('instagram.com')) {
+      conversations = scrapeInstagram();
+      platform = 'instagram';
     } else if (host.includes('olx.com.br')) {
       conversations = scrapeOlx();
+      platform = 'olx';
     }
 
     if (conversations && conversations.length > 0) {
-      console.log('[CRM Content] Found ' + conversations.length + ' conversations. Dispatching to background...');
+      console.log(`[CRM Content] Encontradas ${conversations.length} conversas no ${platform}. Enviando ao CRM...`);
       chrome.runtime.sendMessage({
         type: 'CRM_SYNC_DATA',
-        platform: host.includes('facebook.com') ? 'facebook' : 'olx',
+        platform: platform,
         conversations: conversations
       }, (res) => {
         const countEl = document.getElementById('crm-floater-count');
@@ -527,6 +674,7 @@ function scrapeActiveChats() {
     isScraping = false;
   }
 }
+
 
 // 5. Escutar mensagens do Popup e Background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

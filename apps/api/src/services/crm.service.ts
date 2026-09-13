@@ -2,8 +2,10 @@ import { crmRepository } from '../repositories/crm.repository.js';
 import { profileRepository } from '../repositories/profile.repository.js';
 import { dockerManager } from '../managers/docker.manager.js';
 import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
+import { evolutionService } from './evolution.service.js';
 
 export const DEFAULT_N8N_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager';
+
 export const DEFAULT_N8N_TEST_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook-test/adsmanager';
 
 export class CrmService {
@@ -152,6 +154,9 @@ export class CrmService {
   /**
    * Gets conversation with its messages
    */
+  /**
+   * Gets conversation with its messages
+   */
   async getConversationDetails(id: number) {
     const conversation = await crmRepository.getConversationById(id);
     if (!conversation) return null;
@@ -162,7 +167,45 @@ export class CrmService {
       conversation.unread_count = 0;
     }
 
-    const messages = await crmRepository.getMessagesByConversationId(id, 100);
+    let messages = await crmRepository.getMessagesByConversationId(id, 100);
+
+    // Se for conversa do WhatsApp e ainda tiver poucas mensagens no banco, sincroniza do Evolution API
+    if (conversation.platform === 'whatsapp' && messages.length <= 1) {
+      try {
+        const remoteMessages = await evolutionService.fetchMessages(conversation.external_id, 50);
+        if (remoteMessages && remoteMessages.length > 0) {
+          for (const rm of remoteMessages) {
+            const msgObj = rm.message || {};
+            const text =
+              msgObj.conversation ||
+              msgObj.extendedTextMessage?.text ||
+              msgObj.imageMessage?.caption ||
+              msgObj.buttonsResponseMessage?.selectedDisplayText;
+            if (!text) continue;
+
+            const isMe = Boolean(rm.key?.fromMe);
+            let sentAt = new Date();
+            if (rm.messageTimestamp) {
+              const ts = typeof rm.messageTimestamp === 'number' ? rm.messageTimestamp : parseInt(rm.messageTimestamp, 10);
+              if (ts > 0) sentAt = new Date(ts > 100000000000 ? ts : ts * 1000);
+            }
+
+            await crmRepository.saveMessage({
+              conversation_id: conversation.id,
+              sender_type: isMe ? 'me' : 'customer',
+              sender_name: isMe ? 'Atendente' : (conversation.customer_name || 'Cliente'),
+              content: text,
+              sent_at: sentAt,
+              external_id: rm.key?.id,
+            });
+          }
+          messages = await crmRepository.getMessagesByConversationId(id, 100);
+        }
+      } catch (err: any) {
+        console.warn('[CrmService] Falha ao sincronizar mensagens remotas do WhatsApp:', err.message);
+      }
+    }
+
     return {
       conversation,
       messages,
@@ -170,12 +213,43 @@ export class CrmService {
   }
 
   /**
-   * Sends a reply from the operator dashboard to the customer via extension or CDP
+   * Sends a reply from the operator dashboard to the customer via extension or CDP or Evolution API
    */
   async sendReply(conversationId: number, messageText: string): Promise<{ success: boolean; message: string; outgoing_id?: number }> {
     const conversation = await crmRepository.getConversationById(conversationId);
     if (!conversation) {
       throw new Error('Conversa não encontrada');
+    }
+
+    // 1. WhatsApp Evolution API envio direto
+    if (conversation.platform === 'whatsapp') {
+      const sentDate = new Date();
+      await crmRepository.saveMessage({
+        conversation_id: conversation.id,
+        sender_type: 'me',
+        sender_name: 'Atendente',
+        content: messageText.trim(),
+        sent_at: sentDate,
+      });
+
+      await crmRepository.upsertConversation({
+        profile_id: conversation.profile_id || 1,
+        platform: 'whatsapp',
+        external_id: conversation.external_id,
+        customer_name: conversation.customer_name,
+        last_message: messageText.trim(),
+        last_message_at: sentDate,
+      });
+
+      const res = await evolutionService.sendTextMessage(conversation.external_id, messageText.trim());
+      if (!res.success) {
+        throw new Error(res.error || 'Erro ao enviar via WhatsApp (Evolution API)');
+      }
+
+      return {
+        success: true,
+        message: 'Mensagem enviada com sucesso no WhatsApp!',
+      };
     }
 
     if (!conversation.profile_id) {
@@ -209,6 +283,7 @@ export class CrmService {
       external_id: conversation.external_id,
       message_text: messageText.trim(),
     });
+
 
     // 4. Try active CDP injection if profile container is online
     const profile = await profileRepository.findById(conversation.profile_id);
@@ -285,6 +360,21 @@ export class CrmService {
   async deleteConversation(id: number) {
     return crmRepository.deleteConversation(id);
   }
+
+  /**
+   * Bulk updates lead status for multiple conversations
+   */
+  async bulkUpdateStatus(ids: number[], status: LeadStatus) {
+    return crmRepository.bulkUpdateStatus(ids, status);
+  }
+
+  /**
+   * Bulk deletes multiple conversations
+   */
+  async bulkDelete(ids: number[]) {
+    return crmRepository.bulkDeleteConversations(ids);
+  }
 }
 
 export const crmService = new CrmService();
+

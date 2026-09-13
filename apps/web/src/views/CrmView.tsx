@@ -25,6 +25,8 @@ import {
   Plus,
   ExternalLink,
   FileText,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -77,6 +79,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [showQuickSettings, setShowQuickSettings] = useState<boolean>(false);
   const [newTemplateInput, setNewTemplateInput] = useState<string>('');
 
+  // WhatsApp Evolution Sync
+  const [syncingWhatsApp, setSyncingWhatsApp] = useState<boolean>(false);
+
+  // Bulk Selection (Seletor em Massa)
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState<boolean>(false);
+
+  // Mobile Kanban active stage tab
+  const [activeMobileStage, setActiveMobileStage] = useState<string>('novo');
+
   // Filters
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [selectedProfileId, setSelectedProfileId] = useState<number | 'all'>('all');
@@ -85,7 +97,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const prevLastMsgTimeRef = useRef<Record<number, string>>({});
+  const seenMessageSignaturesRef = useRef<Record<number, string>>({});
   const initialLoadDone = useRef(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
 
@@ -188,14 +200,21 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
       const data = deduplicateConversations(rawData || []);
 
-      // Realtime notification detection
+      // Realtime notification detection (dispara apenas quando a mensagem mudar de fato e não for enviada por mim)
       if (initialLoadDone.current && data && Array.isArray(data)) {
         let hasNewIncoming = false;
         for (const conv of data) {
-          const prevTime = prevLastMsgTimeRef.current[conv.id];
-          const currTime = conv.last_message_at || conv.updated_at;
-          if (prevTime && currTime && new Date(currTime).getTime() > new Date(prevTime).getTime()) {
-            if (conv.id !== selectedId) {
+          const prevMsg = seenMessageSignaturesRef.current[conv.id];
+          const currMsg = (conv.last_message || '').trim();
+          if (prevMsg !== undefined && currMsg && currMsg !== prevMsg) {
+            // Verificar se não foi enviada por mim mesmo
+            const lower = currMsg.toLowerCase();
+            if (
+              conv.id !== selectedId &&
+              !lower.startsWith('tu:') &&
+              !lower.startsWith('você:') &&
+              !lower.startsWith('atendente:')
+            ) {
               hasNewIncoming = true;
             }
           }
@@ -204,16 +223,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           playNotificationSound();
           setFeedback({
             type: 'success',
-            message: 'Nova mensagem recebida no CRM!'
+            message: 'Nova mensagem de cliente recebida!',
           });
           setTimeout(() => setFeedback(null), 4000);
         }
       }
 
-      // Record timestamps
+      // Gravar assinaturas atuais das mensagens
       if (data && Array.isArray(data)) {
         for (const conv of data) {
-          prevLastMsgTimeRef.current[conv.id] = conv.last_message_at || conv.updated_at;
+          seenMessageSignaturesRef.current[conv.id] = (conv.last_message || '').trim();
         }
         initialLoadDone.current = true;
       }
@@ -408,6 +427,97 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     }
   };
 
+  // WhatsApp Evolution Sync Handler
+  const handleSyncWhatsApp = async () => {
+    setSyncingWhatsApp(true);
+    setFeedback(null);
+    try {
+      const res = await api.syncEvolutionWhatsApp();
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: `WhatsApp sincronizado com sucesso! ${res.stats?.count || 0} conversas mapeadas.`,
+        });
+        await fetchConversations(true);
+      } else {
+        setFeedback({ type: 'error', message: res.message || 'Falha ao sincronizar WhatsApp' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao conectar à Evolution API: ' + err.message });
+    } finally {
+      setSyncingWhatsApp(false);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  // Bulk Actions Handlers
+  const handleToggleSelect = (id: number, e?: React.SyntheticEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === conversations.length && conversations.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(conversations.map((c) => c.id));
+    }
+  };
+
+  const handleBulkStatus = async (status: string) => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const res = await api.bulkUpdateCrmStatus(selectedIds, status);
+      setFeedback({
+        type: 'success',
+        message: `${res.updated_count} leads atualizados para "${status}" com sucesso!`,
+      });
+      setConversations((prev) =>
+        prev.map((c) => (selectedIds.includes(c.id) ? { ...c, lead_status: status } : c))
+      );
+      setSelectedIds([]);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Falha na atualização em massa: ' + err.message });
+    } finally {
+      setBulkLoading(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Tem certeza que deseja excluir permanentemente ${selectedIds.length} leads selecionados e todas as suas mensagens?`
+      )
+    ) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const res = await api.bulkDeleteCrmConversations(selectedIds);
+      setFeedback({
+        type: 'success',
+        message: `${res.deleted_count} conversas excluídas com sucesso!`,
+      });
+      setConversations((prev) => prev.filter((c) => !selectedIds.includes(c.id)));
+      if (selectedId && selectedIds.includes(selectedId)) {
+        setSelectedId(null);
+        setActiveThread(null);
+      }
+      setSelectedIds([]);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Falha na exclusão em massa: ' + err.message });
+    } finally {
+      setBulkLoading(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+
   // Initial load & filter change
   useEffect(() => {
     fetchConversations();
@@ -489,6 +599,41 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         return null;
     }
   };
+
+  const getPlatformBadge = (platform?: string) => {
+    const p = (platform || '').toLowerCase();
+    if (p === 'whatsapp') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span>WhatsApp</span>
+        </span>
+      );
+    }
+    if (p === 'instagram') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/30 flex items-center gap-1 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-pink-400"></span>
+          <span>Instagram</span>
+        </span>
+      );
+    }
+    if (p === 'olx') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-purple-400"></span>
+          <span>OLX</span>
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30 flex items-center gap-1 shadow-sm">
+        <span className="h-1.5 w-1.5 rounded-full bg-blue-400"></span>
+        <span>Facebook</span>
+      </span>
+    );
+  };
+
 
   // Filtered conversations with unread
   const unreadConversations = conversations.filter(c => (c.unread_count && c.unread_count > 0) || c.unread);
@@ -611,23 +756,36 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           <div className="flex bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/60 text-xs">
             <button
               onClick={() => setSelectedPlatform('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition ${selectedPlatform === 'all' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition ${selectedPlatform === 'all' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
             >
               Todos
             </button>
             <button
               onClick={() => setSelectedPlatform('facebook')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'facebook' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'facebook' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
             >
-              Facebook
+              <span>Facebook</span>
+            </button>
+            <button
+              onClick={() => setSelectedPlatform('whatsapp')}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'whatsapp' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              <span>WhatsApp</span>
+            </button>
+            <button
+              onClick={() => setSelectedPlatform('instagram')}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'instagram' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              <span>Instagram</span>
             </button>
             <button
               onClick={() => setSelectedPlatform('olx')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'olx' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+              className={`px-2 py-1 rounded-lg font-medium transition flex items-center gap-1 ${selectedPlatform === 'olx' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
             >
-              OLX
+              <span>OLX</span>
             </button>
           </div>
+
 
           {/* Profile Select */}
           <select
@@ -759,6 +917,18 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             <RefreshCw className={`h-4 w-4 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
           </button>
 
+          {/* Sync WhatsApp Evolution API Button */}
+          <button
+            onClick={handleSyncWhatsApp}
+            disabled={syncingWhatsApp}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
+            title="Puxar conversas mais recentes do WhatsApp via Evolution API"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingWhatsApp ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>{syncingWhatsApp ? 'Sincronizando...' : '⚡ Sincronizar WhatsApp'}</span>
+          </button>
+
+
           {/* Test n8n Webhook Button */}
           <button
             onClick={handleTestN8nWebhook}
@@ -811,7 +981,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
           {/* Left Column: Conversations List (Protected with shrink-0) */}
           <div className="w-80 md:w-96 shrink-0 flex-shrink-0 min-w-[320px] max-w-[380px] border-r border-slate-800 flex flex-col bg-slate-900/50 min-h-0 z-10">
-            {/* Header with Title & Lead Count */}
+            {/* Header with Title, Lead Count & Select All */}
             <div className="px-4 py-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/80 shrink-0">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4 text-blue-400" />
@@ -822,14 +992,32 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   {conversations.length}
                 </span>
               </div>
-              <button
-                onClick={() => fetchConversations()}
-                disabled={loadingList}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                title="Atualizar lista"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleSelectAll}
+                  className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                    selectedIds.length > 0 && selectedIds.length === conversations.length
+                      ? 'bg-blue-600/30 text-blue-400 border border-blue-500/40'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                  title={selectedIds.length === conversations.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                >
+                  {selectedIds.length > 0 && selectedIds.length === conversations.length ? (
+                    <CheckSquare className="h-3.5 w-3.5 text-blue-400" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5" />
+                  )}
+                  <span className="text-[10px]">Todos</span>
+                </button>
+                <button
+                  onClick={() => fetchConversations()}
+                  disabled={loadingList}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  title="Atualizar lista"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
+                </button>
+              </div>
             </div>
 
             {/* Search Box */}
@@ -861,7 +1049,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     {marketplaceOnly
                       ? 'Nenhum lead com produto detectado no momento. Verifique se o Marketplace do Facebook está aberto no perfil.'
-                      : 'Abra o Facebook Messenger ou OLX no perfil de navegador para capturar chats automaticamente!'}
+                      : 'Abra o Facebook Messenger, Instagram Direct ou WhatsApp para capturar chats automaticamente!'}
                   </p>
                   {marketplaceOnly && (
                     <button
@@ -876,12 +1064,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 conversations.map((conv) => {
                   const isSelected = selectedId === conv.id;
                   const isUnread = (conv.unread_count && conv.unread_count > 0) || conv.unread;
+                  const isChecked = selectedIds.includes(conv.id);
 
                   return (
                     <div
                       key={conv.id}
                       onClick={() => setSelectedId(conv.id)}
-                      className={`w-full text-left p-3.5 flex items-start gap-3 transition relative group cursor-pointer ${
+                      className={`w-full text-left p-3 flex items-start gap-2.5 transition relative group cursor-pointer ${
                         isSelected
                           ? 'bg-blue-600/15 border-l-4 border-blue-500 shadow-sm'
                           : isUnread
@@ -889,18 +1078,27 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                           : 'hover:bg-slate-800/40 border-l-4 border-transparent'
                       }`}
                     >
+                      {/* Checkbox de seleção em massa */}
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => handleToggleSelect(conv.id, e)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer shrink-0 mt-3"
+                      />
+
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         {conv.customer_avatar ? (
                           <img
                             src={conv.customer_avatar}
                             alt={conv.customer_name}
-                            className={`h-11 w-11 rounded-full object-cover border ${
+                            className={`h-10 w-10 rounded-full object-cover border ${
                               isUnread ? 'border-emerald-400 ring-2 ring-emerald-500/40' : 'border-slate-700'
                             }`}
                           />
                         ) : (
-                          <div className={`h-11 w-11 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs border ${
+                          <div className={`h-10 w-10 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs border ${
                             isUnread ? 'border-emerald-400 ring-2 ring-emerald-500/40' : 'border-slate-700'
                           }`}>
                             {conv.customer_name?.charAt(0)?.toUpperCase() || 'C'}
@@ -908,13 +1106,27 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                         )}
                         {/* Platform Icon Badge */}
                         <span
-                          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow ${
-                            conv.platform === 'facebook' ? 'bg-blue-600' : 'bg-purple-600'
+                          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow ${
+                            conv.platform === 'facebook'
+                              ? 'bg-blue-600'
+                              : conv.platform === 'whatsapp'
+                              ? 'bg-emerald-600'
+                              : conv.platform === 'instagram'
+                              ? 'bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600'
+                              : 'bg-purple-600'
                           }`}
+                          title={`Canal: ${conv.platform}`}
                         >
-                          {conv.platform === 'facebook' ? 'f' : 'O'}
+                          {conv.platform === 'facebook'
+                            ? 'f'
+                            : conv.platform === 'whatsapp'
+                            ? 'W'
+                            : conv.platform === 'instagram'
+                            ? 'IG'
+                            : 'O'}
                         </span>
                       </div>
+
 
                       {/* Chat Info */}
                       <div className="flex-1 min-w-0">
@@ -1319,66 +1531,112 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
           {kanbanMode === 'board' ? (
             /* BOARD VIEW (COLUMNS) */
-            <div className="flex-1 overflow-x-auto p-6 min-h-0 flex gap-5">
-              {KANBAN_STAGES.map((stage) => {
-                const stageLeads = conversations.filter(
-                  (c) => (c.lead_status || 'novo') === stage.id
-                );
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Mobile Stage Selector Tabs (visível apenas em telas pequenas) */}
+              <div className="flex md:hidden overflow-x-auto gap-2 px-4 py-2.5 border-b border-slate-800 bg-slate-900/90 shrink-0">
+                {KANBAN_STAGES.map((stage) => {
+                  const stageCount = conversations.filter(
+                    (c) => (c.lead_status || 'novo') === stage.id
+                  ).length;
+                  const isActive = activeMobileStage === stage.id;
+                  return (
+                    <button
+                      key={stage.id}
+                      onClick={() => setActiveMobileStage(stage.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 shrink-0 ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <span>{stage.title}</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-slate-950/50 text-[10px]">
+                        {stageCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
 
-                return (
-                  <div
-                    key={stage.id}
-                    className="w-80 shrink-0 flex flex-col bg-slate-900/50 rounded-2xl border border-slate-800/80 overflow-hidden shadow-xl"
-                  >
-                    {/* Column Header */}
-                    <div className={`p-4 border-b border-slate-800/80 bg-gradient-to-b ${stage.headerGlow} flex items-center justify-between`}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white">{stage.title}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${stage.badgeClass}`}>
-                          {stageLeads.length}
-                        </span>
-                      </div>
-                    </div>
+              <div className="flex-1 overflow-x-auto p-4 md:p-6 min-h-0 flex gap-5 snap-x">
+                {KANBAN_STAGES.map((stage) => {
+                  const stageLeads = conversations.filter(
+                    (c) => (c.lead_status || 'novo') === stage.id
+                  );
 
-                    {/* Cards Container */}
-                    <div className="flex-1 p-3 overflow-y-auto space-y-3">
-                      {stageLeads.length === 0 ? (
-                        <div className="py-12 text-center text-xs text-slate-600">
-                          Nenhum lead nesta etapa
+                  return (
+                    <div
+                      key={stage.id}
+                      className={`w-full md:w-80 shrink-0 ${
+                        activeMobileStage === stage.id ? 'flex' : 'hidden md:flex'
+                      } flex-col bg-slate-900/50 rounded-2xl border border-slate-800/80 overflow-hidden shadow-xl snap-center`}
+                    >
+                      {/* Column Header */}
+                      <div className={`p-4 border-b border-slate-800/80 bg-gradient-to-b ${stage.headerGlow} flex items-center justify-between`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white">{stage.title}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${stage.badgeClass}`}>
+                            {stageLeads.length}
+                          </span>
                         </div>
-                      ) : (
-                        stageLeads.map((lead) => {
-                          const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
+                      </div>
 
-                          return (
-                            <div
-                              key={lead.id}
-                              className={`p-4 rounded-xl bg-slate-950 border transition shadow-md hover:border-slate-700 space-y-3 ${
-                                isUnread ? 'border-emerald-500/50 ring-1 ring-emerald-500/30' : 'border-slate-800'
-                              }`}
-                            >
-                              {/* Card Top: Customer & Platform */}
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300 shrink-0 border border-slate-700">
-                                    {lead.customer_name?.charAt(0) || 'C'}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <span className="text-xs font-bold text-white truncate block">
-                                      {lead.customer_name}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 block capitalize">
-                                      {lead.platform} • {new Date(lead.last_message_at || lead.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                  </div>
+                      {/* Cards Container */}
+                      <div className="flex-1 p-3 overflow-y-auto space-y-3">
+                        {stageLeads.length === 0 ? (
+                          <div className="py-12 text-center text-xs text-slate-600">
+                            Nenhum lead nesta etapa
+                          </div>
+                        ) : (
+                          stageLeads.map((lead) => {
+                            const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
+                            const isChecked = selectedIds.includes(lead.id);
+
+                            return (
+                              <div
+                                key={lead.id}
+                                className={`p-3.5 rounded-xl bg-slate-950 border transition shadow-md hover:border-slate-700 space-y-3 ${
+                                  isChecked ? 'border-blue-500/80 ring-1 ring-blue-500/40 bg-blue-950/10' :
+                                  isUnread ? 'border-emerald-500/50 ring-1 ring-emerald-500/30' : 'border-slate-800'
+                                }`}
+                              >
+                                {/* Card Top: Multi-Select Checkbox & Platform Badge */}
+                                <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-800/60">
+                                  <label className="flex items-center gap-2 text-[10px] text-slate-400 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => handleToggleSelect(lead.id, e)}
+                                      className="h-3.5 w-3.5 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
+                                    />
+                                    <span>Selecionar</span>
+                                  </label>
+                                  {getPlatformBadge(lead.platform)}
                                 </div>
 
-                                {isUnread && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] animate-pulse">
-                                    Novo
-                                  </span>
-                                )}
-                              </div>
+                                {/* Customer info */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300 shrink-0 border border-slate-700">
+                                      {lead.customer_name?.charAt(0) || 'C'}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className="text-xs font-bold text-white truncate block">
+                                        {lead.customer_name}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 block capitalize">
+                                        {lead.profile_name || 'Perfil'} • {new Date(lead.last_message_at || lead.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {isUnread && (
+                                    <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] animate-pulse">
+                                      Novo
+                                    </span>
+                                  )}
+                                </div>
+
 
                               {/* Product snippet */}
                               {lead.product_title && (
@@ -1462,15 +1720,24 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   </div>
                 );
               })}
+              </div>
             </div>
           ) : (
             /* LIST / TABLE VIEW */
-            <div className="flex-1 p-6 overflow-y-auto min-h-0">
+            <div className="flex-1 p-4 md:p-6 overflow-y-auto min-h-0">
               <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold uppercase text-slate-400 tracking-wider">
-                      <th className="p-3.5">Cliente / Origem</th>
+                      <th className="p-3.5 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.length > 0 && selectedIds.length === conversations.length}
+                          onChange={handleSelectAll}
+                          className="h-4 w-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-3.5">Cliente & Origem</th>
                       <th className="p-3.5">Produto & Preço</th>
                       <th className="p-3.5">Status do Funil</th>
                       <th className="p-3.5">Contato / WhatsApp</th>
@@ -1482,21 +1749,33 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   <tbody className="divide-y divide-slate-800/60 text-xs">
                     {conversations.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-500">
+                        <td colSpan={8} className="p-8 text-center text-slate-500">
                           Nenhum lead encontrado com os filtros selecionados.
                         </td>
                       </tr>
                     ) : (
                       conversations.map((lead) => {
                         const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
+                        const isChecked = selectedIds.includes(lead.id);
 
                         return (
                           <tr
                             key={lead.id}
                             className={`hover:bg-slate-800/40 transition ${
+                              isChecked ? 'bg-blue-950/20' :
                               isUnread ? 'bg-emerald-500/5' : ''
                             }`}
                           >
+                            {/* Checkbox de seleção */}
+                            <td className="p-3.5 w-10 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => handleToggleSelect(lead.id, e)}
+                                className="h-4 w-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 cursor-pointer"
+                              />
+                            </td>
+
                             {/* Cliente */}
                             <td className="p-3.5">
                               <div className="flex items-center gap-3">
@@ -1510,9 +1789,12 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                                     )}
                                   </div>
-                                  <span className="text-[10px] text-slate-500 block capitalize">
-                                    {lead.platform} • {lead.profile_name || 'Perfil'}
-                                  </span>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    {getPlatformBadge(lead.platform)}
+                                    <span className="text-[10px] text-slate-500 block truncate max-w-[120px]">
+                                      {lead.profile_name || 'Perfil'}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -1879,6 +2161,69 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           </div>
         </div>
       )}
+
+      {/* Floating Bulk Action Bar (Barra Flutuante de Ações em Massa) */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl px-5 py-3 rounded-2xl text-xs text-white animate-fadeIn max-w-[95vw] overflow-x-auto">
+          <span className="font-bold bg-blue-600/30 text-blue-400 px-2.5 py-1 rounded-lg border border-blue-500/40 flex items-center gap-1.5 shrink-0">
+            <CheckSquare className="h-3.5 w-3.5" />
+            <span>{selectedIds.length} selecionados</span>
+          </span>
+
+          <div className="h-4 w-px bg-slate-700 shrink-0"></div>
+
+          <span className="text-slate-400 font-medium hidden sm:inline shrink-0">Mover status:</span>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => handleBulkStatus('novo')}
+              disabled={bulkLoading}
+              className="px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/30 text-blue-400 font-semibold transition text-[11px]"
+            >
+              Novo
+            </button>
+            <button
+              onClick={() => handleBulkStatus('em_negociacao')}
+              disabled={bulkLoading}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 text-amber-400 font-semibold transition text-[11px]"
+            >
+              Negociação
+            </button>
+            <button
+              onClick={() => handleBulkStatus('fechado')}
+              disabled={bulkLoading}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-400 font-semibold transition text-[11px]"
+            >
+              Fechado
+            </button>
+            <button
+              onClick={() => handleBulkStatus('perdido')}
+              disabled={bulkLoading}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 font-semibold transition text-[11px]"
+            >
+              Perdido
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-slate-700 shrink-0"></div>
+
+          <button
+            onClick={handleBulkDelete}
+            disabled={bulkLoading}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 text-[11px] shrink-0"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>Excluir</span>
+          </button>
+
+          <button
+            onClick={() => setSelectedIds([])}
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white font-medium transition text-[11px] shrink-0"
+          >
+            Desmarcar
+          </button>
+        </div>
+      )}
     </div>
   );
 };
+

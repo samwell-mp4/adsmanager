@@ -11,6 +11,10 @@ import {
   downloadExtensionHandler,
   initCrmTablesHandler,
   testWebhookForwardHandler,
+  syncEvolutionHandler,
+  evolutionWebhookHandler,
+  bulkUpdateStatusHandler,
+  bulkDeleteHandler,
 } from '../controllers/crm.controller.js';
 
 export async function crmRoutes(fastify: FastifyInstance) {
@@ -24,12 +28,22 @@ export async function crmRoutes(fastify: FastifyInstance) {
   // Initialize and repair CRM database tables if needed
   fastify.get('/api/crm/init', initCrmTablesHandler);
 
+  // Evolution API (WhatsApp) endpoints
+  fastify.post('/api/crm/evolution/sync', syncEvolutionHandler);
+  fastify.get('/api/crm/evolution/sync', syncEvolutionHandler);
+  fastify.post('/api/crm/evolution/webhook', evolutionWebhookHandler);
+  fastify.get('/api/crm/evolution/webhook', evolutionWebhookHandler);
+
   // CRM Dashboard endpoints
   fastify.get('/api/crm/conversations', listConversationsHandler);
   fastify.get('/api/crm/conversations/:id', getConversationDetailsHandler);
   fastify.post('/api/crm/conversations/:id/reply', sendReplyHandler);
   fastify.patch('/api/crm/conversations/:id/status', updateLeadStatusHandler);
   fastify.delete('/api/crm/conversations/:id', deleteConversationHandler);
+
+  // Bulk operations
+  fastify.post('/api/crm/conversations/bulk-status', bulkUpdateStatusHandler);
+  fastify.post('/api/crm/conversations/bulk-delete', bulkDeleteHandler);
 
   // Outgoing queue polling for extension
   fastify.get('/api/crm/outgoing', getPendingRepliesHandler);
@@ -38,5 +52,6 @@ export async function crmRoutes(fastify: FastifyInstance) {
   // Download official extension package (.zip)
   fastify.get('/api/crm/extension/download', downloadExtensionHandler);
 }
+
 
 

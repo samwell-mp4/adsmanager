@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 export interface CrmExtensionOptions {
   profileId?: number;
   profileUuid?: string;
@@ -20,8 +23,8 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
   const manifest = {
     manifest_version: 3,
     name: 'Ads Manager CRM Collector Pro',
-    version: '1.4.0',
-    description: 'Sincronizador automático e manual de mensagens do Facebook Marketplace e OLX para o Ads Manager CRM e n8n Webhook',
+    version: '1.5.0',
+    description: 'Sincronizador automático e manual de mensagens do Facebook Marketplace, Instagram Direct e OLX para o Ads Manager CRM e n8n Webhook',
     permissions: [
       'tabs',
       'storage',
@@ -30,6 +33,7 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
     ],
     host_permissions: [
       '*://*.facebook.com/*',
+      '*://*.instagram.com/*',
       '*://*.olx.com.br/*',
       'https://*.easypanel.host/*',
       '<all_urls>'
@@ -48,6 +52,7 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
       {
         matches: [
           '*://*.facebook.com/*',
+          '*://*.instagram.com/*',
           '*://*.olx.com.br/*'
         ],
         js: ['content.js'],
@@ -58,6 +63,7 @@ export function generateCrmExtensionFiles(options: CrmExtensionOptions = {}): Re
     background: {
       service_worker: 'background.js'
     }
+
   };
 
   const popupHtml = `<!DOCTYPE html>
@@ -1198,6 +1204,21 @@ if (document.body) {
 }
 `;
 
+  let finalContentJs = contentJs;
+  const candidatePaths = [
+    path.resolve(process.cwd(), 'crm-extension', 'content.js'),
+    path.resolve(process.cwd(), '..', 'crm-extension', 'content.js'),
+    path.resolve(process.cwd(), '..', '..', 'crm-extension', 'content.js'),
+  ];
+  for (const cp of candidatePaths) {
+    if (fs.existsSync(cp)) {
+      try {
+        finalContentJs = fs.readFileSync(cp, 'utf8');
+        break;
+      } catch (e) {}
+    }
+  }
+
   const iconBuffer = Buffer.from(ICON_BASE64, 'base64');
 
   return {
@@ -1205,7 +1226,7 @@ if (document.body) {
     'popup.html': popupHtml,
     'popup.js': popupJs,
     'background.js': backgroundJs,
-    'content.js': contentJs,
+    'content.js': finalContentJs,
     'icon16.png': iconBuffer,
     'icon48.png': iconBuffer,
   };
