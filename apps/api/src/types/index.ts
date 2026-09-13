@@ -345,6 +345,7 @@ export interface CatalogProduct {
   main_image?: string | null;
   is_active: boolean;
   notes?: string | null;
+  whatsapp_catalog_link?: string | null;
   variants?: CatalogProductVariant[];
   media?: CatalogProductMedia[];
   created_at: Date | string;
@@ -364,6 +365,7 @@ export interface CreateProductInput {
   main_image?: string;
   is_active?: boolean;
   notes?: string;
+  whatsapp_catalog_link?: string;
   variants?: Array<{
     sku?: string;
     name: string;

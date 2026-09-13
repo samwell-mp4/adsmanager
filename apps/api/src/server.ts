@@ -136,6 +136,17 @@ async function start() {
       prefix: '/',
     });
 
+    // Serve static user uploads (catalog images, attachments)
+    const uploadsPath = path.resolve(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadsPath)) {
+      fs.mkdirSync(uploadsPath, { recursive: true, mode: 0o777 });
+    }
+    await fastify.register(fastifyStatic, {
+      root: uploadsPath,
+      prefix: '/uploads/',
+      decorateReply: false,
+    });
+
     // Explicit root route
     fastify.get('/', (request, reply) => {
       return (reply as any).sendFile('index.html');

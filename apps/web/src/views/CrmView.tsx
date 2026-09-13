@@ -951,6 +951,12 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     }
 
     text += `\n📦 Pronta entrega com envio rápido!`;
+
+    const catLink = product.whatsapp_catalog_link || product.whatsapp_link || product.catalog_url;
+    if (catLink && String(catLink).trim()) {
+      text += `\n\n📲 *Ver no Catálogo WhatsApp:*\n${String(catLink).trim()}`;
+    }
+
     text += `\n\nComo prefere efetuar o pagamento: Pix ou Cartão?`;
     return text;
   };
@@ -1298,6 +1304,26 @@ Instagram: @SNACKSTOREBH`;
     const text = generateReceiptText(order);
     await handleSendReply(text);
     setFeedback({ type: 'success', message: 'Recibo reenviado no WhatsApp com sucesso!' });
+  };
+
+  const handleDeleteOrder = async (orderId: number, orderCode: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a comanda #${orderCode}? Esta ação também removerá o lançamento do Controle Financeiro.`)) {
+      return;
+    }
+    try {
+      await api.deleteCrmOrder(orderId);
+      setLeadOrders(prev => prev.filter(o => o.id !== orderId));
+      setFeedback({ type: 'success', message: `Comanda #${orderCode} excluída com sucesso!` });
+      if (selectedId) {
+        const tl = await api.getCrmLeadTimeline(selectedId).catch(() => []);
+        setLeadTimeline(tl || []);
+        await fetchThread(selectedId, true);
+        await fetchConversations(true);
+      }
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao excluir comanda: ' + err.message });
+    }
   };
 
   // ==========================================
@@ -3570,22 +3596,33 @@ ${quotesList}
                               </div>
 
                               {/* Action Buttons */}
-                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-xs">
+                              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100 text-xs">
                                 <button
                                   type="button"
                                   onClick={() => setActiveOrderReceiptModal(order)}
-                                  className="py-1.5 px-2 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                                  className="py-1.5 px-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold transition flex items-center justify-center gap-1 shadow-2xs text-[10px]"
+                                  title="Visualizar recibo oficial"
                                 >
-                                  <FileText className="h-3.5 w-3.5 text-blue-600" />
-                                  <span>Ver Recibo</span>
+                                  <FileText className="h-3 w-3 text-blue-600" />
+                                  <span>Recibo</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleCopyReceiptToClipboard(order)}
-                                  className="py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition flex items-center justify-center gap-1.5"
+                                  className="py-1.5 px-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition flex items-center justify-center gap-1 text-[10px]"
+                                  title="Copiar texto do recibo"
                                 >
-                                  <Copy className="h-3.5 w-3.5 text-emerald-600" />
-                                  <span>Copiar Texto</span>
+                                  <Copy className="h-3 w-3 text-emerald-600" />
+                                  <span>Copiar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteOrder(order.id, order.order_code)}
+                                  className="py-1.5 px-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold transition flex items-center justify-center gap-1 text-[10px]"
+                                  title="Excluir esta comanda e remover do financeiro"
+                                >
+                                  <Trash2 className="h-3 w-3 text-rose-600" />
+                                  <span>Excluir</span>
                                 </button>
                               </div>
                             </div>

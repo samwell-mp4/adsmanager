@@ -78,6 +78,9 @@ export class CatalogRepository {
         CREATE INDEX IF NOT EXISTS idx_catalog_prod_sku ON catalog_products(sku);
         CREATE INDEX IF NOT EXISTS idx_catalog_var_prod ON catalog_product_variants(product_id);
         CREATE INDEX IF NOT EXISTS idx_catalog_media_prod ON catalog_product_media(product_id);
+
+        -- Garantir coluna whatsapp_catalog_link
+        ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS whatsapp_catalog_link TEXT;
       `);
 
       // Seed sample categories if empty
@@ -272,7 +275,7 @@ export class CatalogRepository {
       SELECT 
         p.id, p.sku, p.name, p.description, p.category_id, p.brand,
         p.price::numeric, p.promotional_price::numeric, p.cost_price::numeric,
-        p.stock, p.main_image, p.is_active, p.notes, p.created_at, p.updated_at,
+        p.stock, p.main_image, p.is_active, p.notes, p.whatsapp_catalog_link, p.created_at, p.updated_at,
         c.name as category_name,
         COALESCE(
           (SELECT json_agg(json_build_object(
@@ -322,7 +325,7 @@ export class CatalogRepository {
       SELECT 
         p.id, p.sku, p.name, p.description, p.category_id, p.brand,
         p.price::numeric, p.promotional_price::numeric, p.cost_price::numeric,
-        p.stock, p.main_image, p.is_active, p.notes, p.created_at, p.updated_at,
+        p.stock, p.main_image, p.is_active, p.notes, p.whatsapp_catalog_link, p.created_at, p.updated_at,
         c.name as category_name,
         COALESCE(
           (SELECT json_agg(json_build_object(
@@ -387,8 +390,8 @@ export class CatalogRepository {
       const prodRes = await client.query(`
         INSERT INTO catalog_products (
           sku, name, description, category_id, brand, price,
-          promotional_price, cost_price, stock, main_image, is_active, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          promotional_price, cost_price, stock, main_image, is_active, notes, whatsapp_catalog_link
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id
       `, [
         sku,
@@ -402,7 +405,8 @@ export class CatalogRepository {
         stock,
         data.main_image || null,
         data.is_active !== undefined ? data.is_active : true,
-        data.notes || null
+        data.notes || null,
+        data.whatsapp_catalog_link?.trim() || null
       ]);
 
       const productId = prodRes.rows[0].id;
@@ -482,8 +486,9 @@ export class CatalogRepository {
           main_image = COALESCE($10, main_image),
           is_active = COALESCE($11, is_active),
           notes = $12,
+          whatsapp_catalog_link = COALESCE($13, whatsapp_catalog_link),
           updated_at = NOW()
-        WHERE id = $13
+        WHERE id = $14
       `, [
         data.sku?.trim() || null,
         data.name?.trim() || null,
@@ -497,6 +502,7 @@ export class CatalogRepository {
         data.main_image !== undefined ? data.main_image : null,
         data.is_active,
         data.notes !== undefined ? data.notes : null,
+        data.whatsapp_catalog_link !== undefined ? data.whatsapp_catalog_link?.trim() : null,
         id
       ]);
 

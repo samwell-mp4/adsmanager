@@ -176,3 +176,50 @@ export async function importProductsHandler(
     return reply.status(400).send({ success: false, message: err.message });
   }
 }
+
+import fs from 'fs';
+import path from 'path';
+import { activePublicUrl } from '../server.js';
+
+export async function uploadCatalogImageHandler(
+  req: FastifyRequest<{ Body: { filename?: string; fileBase64: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { filename, fileBase64 } = req.body || {};
+    if (!fileBase64) {
+      return reply.status(400).send({ success: false, message: 'Nenhuma imagem enviada em base64.' });
+    }
+
+    const uploadsDir = path.resolve(process.cwd(), 'uploads/catalog');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o777 });
+    }
+
+    const rawBase64 = fileBase64.replace(/^data:image\/[a-z0-9.+_-]+;base64,/i, '');
+    const buffer = Buffer.from(rawBase64, 'base64');
+
+    const ext = filename ? path.extname(filename).toLowerCase() || '.jpg' : '.jpg';
+    const cleanBaseName = (filename ? path.basename(filename, ext) : 'produto')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .slice(0, 30);
+    const uniqueName = `${cleanBaseName}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${ext}`;
+    const filePath = path.join(uploadsDir, uniqueName);
+
+    fs.writeFileSync(filePath, buffer);
+    try { fs.chmodSync(filePath, 0o777); } catch {}
+
+    const relativeUrl = `/uploads/catalog/${uniqueName}`;
+    const fullUrl = `${(activePublicUrl || '').replace(/\/$/, '')}${relativeUrl}`;
+
+    return reply.send({
+      success: true,
+      url: relativeUrl,
+      full_url: fullUrl,
+      filename: uniqueName,
+    });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: 'Falha ao salvar imagem: ' + err.message });
+  }
+}

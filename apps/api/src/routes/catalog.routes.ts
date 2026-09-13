@@ -9,10 +9,17 @@ import {
   createProductHandler,
   updateProductHandler,
   deleteProductHandler,
-  importProductsHandler
+  importProductsHandler,
+  uploadCatalogImageHandler
 } from '../controllers/catalog.controller.js';
 
 export async function catalogRoutes(fastify: FastifyInstance) {
+  // Upload de Imagens de Produtos
+  const uploadUrls = ['/api/catalog/upload', '/catalog/upload'];
+  for (const u of uploadUrls) {
+    fastify.post(u, uploadCatalogImageHandler);
+  }
+
   // Categorias
   const catListUrls = ['/api/catalog/categories', '/catalog/categories'];
   for (const u of catListUrls) {

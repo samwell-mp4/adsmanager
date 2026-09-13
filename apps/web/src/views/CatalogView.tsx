@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Package,
   Search,
@@ -16,6 +16,7 @@ import {
   Layers,
   Image as ImageIcon,
   Check,
+  MessageSquare,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -53,7 +54,14 @@ export const CatalogView: React.FC = () => {
     main_image: '',
     is_active: true,
     notes: '',
+    whatsapp_catalog_link: '',
   });
+
+  // Image Uploading States & Refs
+  const [uploadingMainImage, setUploadingMainImage] = useState<boolean>(false);
+  const [uploadingGalleryImage, setUploadingGalleryImage] = useState<boolean>(false);
+  const mainFileInputRef = useRef<HTMLInputElement>(null);
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Variants State
   const [variants, setVariants] = useState<Array<{ sku: string; name: string; variant_type: string; price: string; stock: string }>>([]);
@@ -140,6 +148,63 @@ export const CatalogView: React.FC = () => {
     return isNaN(n) ? null : n;
   };
 
+  // Upload handlers
+  const handleMainImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMainImage(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const res = await api.uploadCatalogImage(file.name, base64);
+          if (res.url) {
+            setFormData(prev => ({ ...prev, main_image: res.url }));
+            setFeedback({ type: 'success', message: 'Imagem do produto carregada com sucesso!' });
+          }
+        } catch (err: any) {
+          setFeedback({ type: 'error', message: 'Erro no upload da imagem: ' + err.message });
+        } finally {
+          setUploadingMainImage(false);
+          if (e.target) e.target.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao processar imagem: ' + err.message });
+      setUploadingMainImage(false);
+    }
+  };
+
+  const handleGalleryImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingGalleryImage(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const res = await api.uploadCatalogImage(file.name, base64);
+          if (res.url) {
+            setMediaList(prev => [...prev, { url: res.url, media_type: 'image' }]);
+            setFeedback({ type: 'success', message: 'Foto adicionada à galeria do produto!' });
+          }
+        } catch (err: any) {
+          setFeedback({ type: 'error', message: 'Erro no upload da foto: ' + err.message });
+        } finally {
+          setUploadingGalleryImage(false);
+          if (e.target) e.target.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao processar foto: ' + err.message });
+      setUploadingGalleryImage(false);
+    }
+  };
+
   // Open Modal to Create
   const handleOpenCreate = () => {
     setEditingProduct(null);
@@ -157,6 +222,7 @@ export const CatalogView: React.FC = () => {
       main_image: '',
       is_active: true,
       notes: '',
+      whatsapp_catalog_link: '',
     });
     setVariants([]);
     setMediaList([]);
@@ -180,6 +246,7 @@ export const CatalogView: React.FC = () => {
       main_image: product.main_image || '',
       is_active: product.is_active,
       notes: product.notes || '',
+      whatsapp_catalog_link: product.whatsapp_catalog_link || '',
     });
 
     setVariants(
@@ -237,6 +304,7 @@ export const CatalogView: React.FC = () => {
         main_image: formData.main_image.trim() || undefined,
         is_active: formData.is_active,
         notes: formData.notes.trim() || undefined,
+        whatsapp_catalog_link: formData.whatsapp_catalog_link.trim() || undefined,
         variants: variants.map((v) => ({
           sku: v.sku.trim() || undefined,
           name: v.name.trim(),
@@ -989,17 +1057,44 @@ export const CatalogView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Main Image URL & Preview */}
+              {/* Main Image URL & Upload */}
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  URL da Imagem Principal
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700">
+                    Imagem Principal do Produto
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => mainFileInputRef.current?.click()}
+                    disabled={uploadingMainImage}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition"
+                  >
+                    {uploadingMainImage ? (
+                      <>
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        <span>Enviando foto...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3 w-3" />
+                        <span>Upload do Computador</span>
+                      </>
+                    )}
+                  </button>
+                  <input
+                    type="file"
+                    ref={mainFileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleMainImageFileChange}
+                  />
+                </div>
                 <div className="flex items-center gap-2">
                   <input
-                    type="url"
+                    type="text"
                     value={formData.main_image}
                     onChange={(e) => setFormData({ ...formData, main_image: e.target.value })}
-                    placeholder="https://exemplo.com/foto-do-produto.jpg"
+                    placeholder="URL externa ou arquivo enviado (ex: /uploads/catalog/produto.jpg)"
                     className="flex-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
                   {formData.main_image && (
@@ -1103,10 +1198,37 @@ export const CatalogView: React.FC = () => {
 
               {/* Section: Galeria de Mídias */}
               <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <ImageIcon className="h-4 w-4 text-blue-600" />
-                  Galeria de Fotos Adicionais
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <ImageIcon className="h-4 w-4 text-blue-600" />
+                    Galeria de Fotos Adicionais
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => galleryFileInputRef.current?.click()}
+                    disabled={uploadingGalleryImage}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition"
+                  >
+                    {uploadingGalleryImage ? (
+                      <>
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        <span>Enviando foto...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3 w-3" />
+                        <span>Upload para Galeria</span>
+                      </>
+                    )}
+                  </button>
+                  <input
+                    type="file"
+                    ref={galleryFileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleGalleryImageFileChange}
+                  />
+                </div>
                 {mediaList.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {mediaList.map((m, idx) => (
@@ -1153,6 +1275,27 @@ export const CatalogView: React.FC = () => {
                   placeholder="Texto explicativo das qualidades do produto para enviar ao cliente..."
                   className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white resize-none"
                 />
+              </div>
+
+              {/* WhatsApp Catalog Link */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
+                    Link do Catálogo WhatsApp (Opcional)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">Ex: https://wa.me/c/5531998592398</span>
+                </label>
+                <input
+                  type="url"
+                  value={formData.whatsapp_catalog_link}
+                  onChange={(e) => setFormData({ ...formData, whatsapp_catalog_link: e.target.value })}
+                  placeholder="https://wa.me/c/5531998592398 ou link direto do produto"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Se preenchido, este link direto será anexado automaticamente na proposta comercial enviada pelo WhatsApp.
+                </p>
               </div>
 
               {/* Submit Buttons */}

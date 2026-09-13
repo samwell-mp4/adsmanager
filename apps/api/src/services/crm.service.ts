@@ -606,6 +606,10 @@ ESSA MENSAGEM TAMBÉM CONTA COMO COMPROVANTE DE COMPRA, POR FAVOR ARMAZENAR NO C
   async getOrderById(id: number) {
     return crmRepository.getOrderById(id);
   }
+
+  async deleteOrder(id: number) {
+    return crmRepository.deleteOrder(id);
+  }
 }
 
 export const crmService = new CrmService();

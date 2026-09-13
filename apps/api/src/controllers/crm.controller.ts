@@ -745,6 +745,19 @@ export async function getOrderHandler(
   }
 }
 
+export async function deleteOrderHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const deleted = await crmService.deleteOrder(id);
+    return reply.send({ success: true, deleted });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
 
 
 

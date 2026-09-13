@@ -701,6 +701,22 @@ export const api = {
     return handleResponse<any>(res);
   },
 
+  async deleteCrmOrder(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/crm/orders/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
+  async uploadCatalogImage(filename: string, fileBase64: string): Promise<{ success: boolean; url: string; full_url: string; filename: string }> {
+    const res = await fetch(`${API_BASE}/catalog/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, fileBase64 }),
+    });
+    return handleResponse<any>(res);
+  },
+
   // ==========================================
   // CONTROLE FINANCEIRO
   // ==========================================

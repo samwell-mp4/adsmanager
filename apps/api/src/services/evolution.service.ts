@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { crmRepository } from '../repositories/crm.repository.js';
 
 export interface EvolutionConfig {
@@ -203,6 +205,21 @@ export class EvolutionService {
         }
       } catch (err: any) {
         console.warn('[Evolution] Erro ao converter mídia para base64, enviando URL direta:', err.message);
+      }
+    } else if (mediaPayload.startsWith('/uploads/')) {
+      try {
+        const localPath = path.resolve(process.cwd(), mediaPayload.replace(/^\//, ''));
+        if (fs.existsSync(localPath)) {
+          const buf = fs.readFileSync(localPath);
+          const ext = path.extname(localPath).toLowerCase().replace('.', '');
+          mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+          const b64 = buf.toString('base64');
+          mediaPayload = `data:${mimeType};base64,${b64}`;
+          fileName = path.basename(localPath);
+          console.log(`[Evolution] Mídia local ${localPath} convertida para base64 com sucesso!`);
+        }
+      } catch (err: any) {
+        console.warn('[Evolution] Erro ao ler mídia local:', err.message);
       }
     } else if (mediaPayload.startsWith('data:')) {
       const match = mediaPayload.match(/^data:([^;]+);base64,/);

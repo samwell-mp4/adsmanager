@@ -1934,6 +1934,59 @@ export class CrmRepository {
     }
   }
 
+  async deleteOrder(id: number): Promise<boolean> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    let released = false;
+    try {
+      await client.query('BEGIN');
+      const orderRes = await client.query(
+        `SELECT id, order_code, conversation_id, total_amount FROM crm_orders WHERE id = $1;`,
+        [id]
+      );
+      if (orderRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      const order = orderRes.rows[0];
+
+      // 1. Excluir transações financeiras vinculadas a este pedido
+      await client.query(`DELETE FROM crm_financial_transactions WHERE order_id = $1;`, [id]);
+
+      // 2. Excluir itens do pedido
+      await client.query(`DELETE FROM crm_order_items WHERE order_id = $1;`, [id]);
+
+      // 3. Excluir o pedido
+      const deleteRes = await client.query(`DELETE FROM crm_orders WHERE id = $1;`, [id]);
+
+      // 4. Registrar evento na timeline da conversa se aplicável
+      if (order.conversation_id) {
+        await client.query(
+          `INSERT INTO crm_events (conversation_id, event_type, title, description, metadata)
+           VALUES ($1, $2, $3, $4, $5);`,
+          [
+            order.conversation_id,
+            'order_deleted',
+            `Comanda Cancelada/Excluída: #${order.order_code}`,
+            `A comanda no valor de R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')} foi removida do sistema.`,
+            JSON.stringify({ order_id: id, order_code: order.order_code, total: Number(order.total_amount) }),
+          ]
+        );
+      }
+
+      await client.query('COMMIT');
+      client.release();
+      released = true;
+      return (deleteRes.rowCount || 0) > 0;
+    } catch (err) {
+      if (!released) {
+        try { await client.query('ROLLBACK'); } catch {}
+        client.release();
+      }
+      throw err;
+    }
+  }
+
   // ==========================================
   // CONTROLE FINANCEIRO
   // ==========================================
@@ -2056,11 +2109,33 @@ export class CrmRepository {
   async deleteFinancialTransaction(id: number): Promise<boolean> {
     await this.ensureCrmTablesExist();
     const client = await pool.connect();
+    let released = false;
     try {
+      await client.query('BEGIN');
+      const txRes = await client.query(`SELECT id, order_id FROM crm_financial_transactions WHERE id = $1;`, [id]);
+      if (txRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      const tx = txRes.rows[0];
+
+      // Se este lançamento estiver vinculado a um pedido, excluir o pedido e seus itens do CRM
+      if (tx.order_id) {
+        await client.query(`DELETE FROM crm_order_items WHERE order_id = $1;`, [tx.order_id]);
+        await client.query(`DELETE FROM crm_orders WHERE id = $1;`, [tx.order_id]);
+      }
+
       const res = await client.query(`DELETE FROM crm_financial_transactions WHERE id = $1;`, [id]);
-      return (res.rowCount || 0) > 0;
-    } finally {
+      await client.query('COMMIT');
       client.release();
+      released = true;
+      return (res.rowCount || 0) > 0;
+    } catch (err) {
+      if (!released) {
+        try { await client.query('ROLLBACK'); } catch {}
+        client.release();
+      }
+      throw err;
     }
   }
 
