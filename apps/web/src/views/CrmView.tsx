@@ -1252,44 +1252,42 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     let itemsText = '';
     if (order.items && order.items.length > 0) {
       itemsText = order.items.map((it: any) => {
-        const vText = it.variant_name ? ` (${it.variant_name})` : '';
+        const vText = it.variant_name ? ` (*${it.variant_name}*)` : '';
         const priceFmt = `R$ ${Number(it.unit_price).toFixed(2).replace('.', ',')}`;
-        return `${it.quantity}x ${it.product_name}${vText}\nValor : ${priceFmt}`;
+        return `📦 *${it.quantity}x ${it.product_name}*${vText}\n    Valor: ${priceFmt}`;
       }).join('\n\n');
     } else {
-      itemsText = '1x Produto Diversos\nValor : R$ ' + Number(order.total_amount).toFixed(2).replace('.', ',');
+      itemsText = '📦 *1x Produto Diversos*\n    Valor: R$ ' + Number(order.total_amount).toFixed(2).replace('.', ',');
     }
 
-    const freteText = order.shipping_fee > 0 ? `\nFrete: R$ ${Number(order.shipping_fee).toFixed(2).replace('.', ',')}` : '';
+    const freteText = order.shipping_fee > 0 ? `\n\n🚚 *Frete:* R$ ${Number(order.shipping_fee).toFixed(2).replace('.', ',')}` : '';
 
-    return `Data: ${day} / ${month} / ${year}
-Horário: ${hours}:${minutes}
-Código da Venda: ${order.order_code}
-Produto expedido por Snack Store BH - Eletronics e Smartwatch's
-CNPJ: 32.404.968/0001-70 - Minas Gerais (Belo Horizonte)
-Endereço :
-Edifício Savannah Mall
-R. Araguari, 359 - Barro Preto,
-Belo Horizonte - MG, 30190-110
-Segundo andar ( saindo do elevador saia à direita, final do corredor ) , sala 55
+    return `🧾 *RECIBO DE VENDA E GARANTIA* 🧾
 
-Nome do Cliente: ${order.customer_name || 'Cliente'}
-CPF do Cliente: ${order.customer_cpf || 'Não informado'}
-Email do Cliente: ${order.customer_email || 'Não informado'}
-Telefone do Cliente: ${order.customer_phone || ''}
-Endereço: ${order.delivery_address || 'Retirada no Balcão'}
+📅 *Data:* ${day}/${month}/${year} às ${hours}:${minutes}
+🔢 *Código da Venda:* #${order.order_code}
 
-Produto :
+🏢 *Expedido por:* Snack Store BH - Eletronics & Smartwatch's
+📄 *CNPJ:* 32.404.968/0001-70 - Belo Horizonte/MG
+
+👤 *DADOS DO CLIENTE*
+*Nome:* ${order.customer_name || 'Cliente'}
+*CPF:* ${order.customer_cpf || 'Não informado'}
+*Telefone:* ${order.customer_phone || 'Não informado'}
+*Endereço:* ${order.delivery_address || 'Retirada no Balcão'}
+
+🛒 *PRODUTOS*
 ${itemsText}${freteText}
 
-Total: R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}
-Forma de Pagamento: ${paymentLabel}
-Modo de entrega: ${deliveryLabel}
+💰 *RESUMO DO PEDIDO*
+*Total:* R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}
+*Pagamento:* ${paymentLabel}
+*Entrega:* ${deliveryLabel}
 
-Att: Snack Store BH
-Recibo de Garantia e Autenticidade do Produto.
-Agradecemos a preferência!
-Instagram: @SNACKSTOREBH`;
+✨ *Agradecemos a preferência!*
+Este é o seu recibo oficial de garantia e autenticidade.
+
+📱 *Instagram:* @SNACKSTOREBH`;
   };
 
   const handleCopyReceiptToClipboard = (order: any) => {
@@ -1819,7 +1817,7 @@ ${quotesList}
           <select
             value={selectedProfileId}
             onChange={(e) => setSelectedProfileId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
+            className="bg-white border border-slate-200 text-base sm:text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
           >
             <option value="all">Todos os Perfis</option>
             {profiles.map((p) => (
@@ -1833,7 +1831,7 @@ ${quotesList}
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
+            className="bg-white border border-slate-200 text-base sm:text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
           >
             <option value="all">Status (Todos)</option>
             {statuses.length > 0 ? (
@@ -1856,7 +1854,7 @@ ${quotesList}
           <select
             value={selectedTagFilter}
             onChange={(e) => setSelectedTagFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-            className="bg-white border border-slate-200 text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
+            className="bg-white border border-slate-200 text-base sm:text-xs text-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
           >
             <option value="all">Tags (Todas)</option>
             {availableTags.map((t) => (
@@ -2098,7 +2096,7 @@ ${quotesList}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && fetchConversations()}
                   placeholder="Buscar cliente, produto ou mensagem..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white placeholder:text-slate-400 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white placeholder:text-slate-400 transition"
                 />
               </div>
             </div>
@@ -2360,7 +2358,7 @@ ${quotesList}
                     <select
                       value={activeThread.conversation.lead_status || 'novo'}
                       onChange={(e) => handleStatusChange(activeThread.conversation.id, e.target.value)}
-                      className="bg-white border border-slate-200 text-xs text-slate-800 rounded-xl px-2 sm:px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs max-w-[120px] sm:max-w-none"
+                      className="bg-white border border-slate-200 text-base sm:text-xs text-slate-800 rounded-xl px-2 sm:px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs max-w-[120px] sm:max-w-none"
                     >
                       {statuses.length > 0 ? (
                         statuses.map((s) => (
@@ -2532,7 +2530,7 @@ ${quotesList}
                       }}
                       placeholder="Digite sua resposta (dica: digite /catalogo para produtos)..."
                       rows={2}
-                      className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition resize-none placeholder:text-slate-400 font-sans"
+                      className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition resize-none placeholder:text-slate-400 font-sans"
                     />
                     {(replyText.includes('/catalogo') || replyText.includes('/produto')) && (
                       <button
@@ -2770,7 +2768,7 @@ ${quotesList}
                           value={newTagName}
                           onChange={(e) => setNewTagName(e.target.value)}
                           placeholder="Criar nova tag..."
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                         />
                         <input
                           type="color"
@@ -3250,7 +3248,7 @@ ${quotesList}
                         onChange={(e) => setNewNoteInput(e.target.value)}
                         placeholder="Escreva uma nota interna (ex: cliente quer fechar após o dia 15)..."
                         rows={2}
-                        className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white resize-none"
+                        className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white resize-none"
                       />
                       <div className="flex justify-end">
                         <button
@@ -3322,7 +3320,7 @@ ${quotesList}
                           value={catalogSearch}
                           onChange={(e) => setCatalogSearch(e.target.value)}
                           placeholder="Buscar produto ou SKU..."
-                          className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-purple-500 focus:bg-white"
+                          className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-purple-500 focus:bg-white"
                         />
                         {catalogSearch && (
                           <button
@@ -4017,7 +4015,7 @@ ${quotesList}
                               <select
                                 value={lead.lead_status || 'novo'}
                                 onChange={(e) => handleStatusChange(lead.id, e.target.value)}
-                                className="bg-slate-900 border border-slate-700 text-xs font-bold text-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500"
+                                className="bg-slate-900 border border-slate-700 text-base sm:text-xs font-bold text-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500"
                               >
                                 <option value="novo">🔵 Novo Lead</option>
                                 <option value="em_negociacao">🟡 Em Negociação</option>
@@ -4612,7 +4610,7 @@ ${quotesList}
                 <select
                   value={modalStatus}
                   onChange={(e) => setModalStatus(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
                 >
                   {statuses.length > 0 ? (
                     statuses.map((s) => (
@@ -4642,7 +4640,7 @@ ${quotesList}
                     value={modalPhone}
                     onChange={(e) => setModalPhone(e.target.value)}
                     placeholder="(11) 98765-4321"
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -4654,7 +4652,7 @@ ${quotesList}
                     value={modalAssignedTo}
                     onChange={(e) => setModalAssignedTo(e.target.value)}
                     placeholder="Nome do operador"
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -4670,7 +4668,7 @@ ${quotesList}
                     value={modalCity}
                     onChange={(e) => setModalCity(e.target.value)}
                     placeholder="Belo Horizonte"
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -4683,7 +4681,7 @@ ${quotesList}
                     onChange={(e) => setModalState(e.target.value)}
                     placeholder="MG"
                     maxLength={2}
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 uppercase"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 uppercase"
                   />
                 </div>
               </div>
@@ -4698,7 +4696,7 @@ ${quotesList}
                   value={modalAddress}
                   onChange={(e) => setModalAddress(e.target.value)}
                   placeholder="Rua, número, complemento, bairro"
-                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -4712,7 +4710,7 @@ ${quotesList}
                   value={modalDealValue}
                   onChange={(e) => setModalDealValue(e.target.value)}
                   placeholder="R$ 149,90"
-                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -4726,7 +4724,7 @@ ${quotesList}
                   onChange={(e) => setModalNotes(e.target.value)}
                   placeholder="Informações relevantes sobre este cliente ou pedido..."
                   rows={3}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
             </div>
@@ -4834,7 +4832,7 @@ ${quotesList}
                   type="datetime-local"
                   value={followupForm.scheduled_at}
                   onChange={(e) => setFollowupForm({ ...followupForm, scheduled_at: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
                 />
               </div>
 
@@ -4847,7 +4845,7 @@ ${quotesList}
                   <select
                     value={followupForm.followup_type}
                     onChange={(e) => setFollowupForm({ ...followupForm, followup_type: e.target.value })}
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
                   >
                     <option value="WhatsApp">💬 WhatsApp</option>
                     <option value="Ligar">📞 Ligar</option>
@@ -4866,7 +4864,7 @@ ${quotesList}
                   <select
                     value={followupForm.priority}
                     onChange={(e) => setFollowupForm({ ...followupForm, priority: e.target.value })}
-                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                    className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
                   >
                     <option value="normal">⚪ Normal</option>
                     <option value="high">🟡 Alta</option>
@@ -4886,7 +4884,7 @@ ${quotesList}
                   onChange={(e) => setFollowupForm({ ...followupForm, notes: e.target.value })}
                   placeholder="Ex: Cobrar retorno sobre a proposta de miniaturas..."
                   rows={2}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-base sm:text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
             </div>
@@ -5141,7 +5139,7 @@ ${quotesList}
                       }
                     }}
                     placeholder="Ex: Tenho sim! Podemos enviar via Sedex hoje mesmo..."
-                    className="flex-1 p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="flex-1 p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-base sm:text-xs text-slate-100 focus:outline-none focus:border-blue-500"
                   />
                   <button
                     onClick={handleAddTemplate}
@@ -5391,7 +5389,7 @@ ${quotesList}
                   placeholder="Buscar produto por nome, SKU, marca..."
                   value={catalogSearch}
                   onChange={(e) => setCatalogSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-purple-500 transition"
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-base sm:text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-purple-500 transition"
                 />
               </div>
 
@@ -5712,7 +5710,7 @@ ${quotesList}
                             value={item.product_name}
                             onChange={(e) => handleUpdateOrderItem(idx, 'product_name', e.target.value)}
                             placeholder="Nome ou descrição do produto..."
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-base sm:text-xs focus:outline-none focus:border-blue-500"
                           />
                         </div>
 
@@ -5723,7 +5721,7 @@ ${quotesList}
                             min="1"
                             value={item.quantity}
                             onChange={(e) => handleUpdateOrderItem(idx, 'quantity', parseInt(e.target.value, 10) || 1)}
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500 text-center font-bold"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-base sm:text-xs focus:outline-none focus:border-blue-500 text-center font-bold"
                           />
                         </div>
 
@@ -5735,7 +5733,7 @@ ${quotesList}
                             min="0"
                             value={item.unit_price}
                             onChange={(e) => handleUpdateOrderItem(idx, 'unit_price', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500 text-right font-bold"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-base sm:text-xs focus:outline-none focus:border-blue-500 text-right font-bold"
                           />
                         </div>
 
@@ -5825,7 +5823,7 @@ ${quotesList}
                       <select
                         value={orderForm.origin_cep}
                         onChange={(e) => setOrderForm({ ...orderForm, origin_cep: e.target.value })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold focus:outline-none focus:border-blue-500"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-base sm:text-xs font-semibold focus:outline-none focus:border-blue-500"
                       >
                         <option value="30730130">Saída 1: Padre Eustáquio (CEP 30730-130)</option>
                         <option value="30110017">Saída 2: Savassi / Centro (CEP 30110-017)</option>
@@ -5841,7 +5839,7 @@ ${quotesList}
                           value={orderForm.destination_cep}
                           onChange={(e) => setOrderForm({ ...orderForm, destination_cep: e.target.value })}
                           placeholder="CEP do Cliente (ex: 01018-020)"
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-900 text-base sm:text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
                         />
                       </div>
                       <button
@@ -5873,7 +5871,7 @@ ${quotesList}
                             min="1"
                             value={orderForm.package_height}
                             onChange={(e) => setOrderForm({ ...orderForm, package_height: parseFloat(e.target.value) || 1 })}
-                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                           />
                         </div>
                         <div>
@@ -5883,7 +5881,7 @@ ${quotesList}
                             min="10"
                             value={orderForm.package_width}
                             onChange={(e) => setOrderForm({ ...orderForm, package_width: parseFloat(e.target.value) || 10 })}
-                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                           />
                         </div>
                         <div>
@@ -5893,7 +5891,7 @@ ${quotesList}
                             min="15"
                             value={orderForm.package_length}
                             onChange={(e) => setOrderForm({ ...orderForm, package_length: parseFloat(e.target.value) || 15 })}
-                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                           />
                         </div>
                         <div>
@@ -5904,7 +5902,7 @@ ${quotesList}
                             min="0.1"
                             value={orderForm.package_weight}
                             onChange={(e) => setOrderForm({ ...orderForm, package_weight: parseFloat(e.target.value) || 0.5 })}
-                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-xs"
+                            className="w-full px-2 py-1 rounded bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                           />
                         </div>
                       </div>
@@ -6205,7 +6203,7 @@ ${quotesList}
                 <select
                   value={shippingModalOrigin}
                   onChange={(e) => setShippingModalOrigin(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-base sm:text-xs font-semibold focus:outline-none focus:border-blue-500 focus:bg-white"
                 >
                   <option value="30730130">Saída 1: Padre Eustáquio (CEP 30730-130)</option>
                   <option value="30110017">Saída 2: Savassi / Centro (CEP 30110-017)</option>
@@ -6218,7 +6216,7 @@ ${quotesList}
                     value={shippingModalCustomOrigin}
                     onChange={(e) => setShippingModalCustomOrigin(e.target.value)}
                     placeholder="Digite o CEP de origem (ex: 30190-110)"
-                    className="w-full mt-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                    className="w-full mt-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-base sm:text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
                 )}
               </div>
@@ -6234,7 +6232,7 @@ ${quotesList}
                     value={shippingModalCep}
                     onChange={(e) => setShippingModalCep(e.target.value)}
                     placeholder="CEP (ex: 01018-020)"
-                    className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-base sm:text-xs font-bold focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
                   <button
                     type="button"
@@ -6271,7 +6269,7 @@ ${quotesList}
                       min="1"
                       value={shippingModalHeight}
                       onChange={(e) => setShippingModalHeight(parseFloat(e.target.value) || 1)}
-                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                     />
                   </div>
                   <div>
@@ -6281,7 +6279,7 @@ ${quotesList}
                       min="10"
                       value={shippingModalWidth}
                       onChange={(e) => setShippingModalWidth(parseFloat(e.target.value) || 10)}
-                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                     />
                   </div>
                   <div>
@@ -6291,7 +6289,7 @@ ${quotesList}
                       min="15"
                       value={shippingModalLength}
                       onChange={(e) => setShippingModalLength(parseFloat(e.target.value) || 15)}
-                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                     />
                   </div>
                   <div>
@@ -6302,7 +6300,7 @@ ${quotesList}
                       min="0.1"
                       value={shippingModalWeight}
                       onChange={(e) => setShippingModalWeight(parseFloat(e.target.value) || 0.5)}
-                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-xs"
+                      className="w-full px-2 py-1 rounded-lg bg-white border border-slate-200 text-center font-bold text-base sm:text-xs"
                     />
                   </div>
                 </div>
