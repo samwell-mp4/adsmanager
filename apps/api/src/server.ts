@@ -218,6 +218,10 @@ async function start() {
       dockerManager.ensureImageExists().catch(err => {
         console.error('[API] Background image build failed:', err.message);
       });
+      // Synchronize running containers with latest CRM extension package
+      dockerManager.syncAllRunningContainersWithLatestExtension().catch(syncErr => {
+        console.warn('[API] Background extension sync notice:', syncErr.message);
+      });
     } else {
       console.warn('[API] Warning: Docker daemon is not reachable at startup. Profile creation will fail.');
     }

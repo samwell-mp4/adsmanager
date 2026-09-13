@@ -281,4 +281,59 @@ export async function bulkDeleteHandler(
   }
 }
 
+export async function syncExtensionsHandler(
+  req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const { dockerManager } = await import('../managers/docker.manager.js');
+    const result = await dockerManager.syncAllRunningContainersWithLatestExtension();
+    return reply.send({ success: true, ...result });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function openTabHandler(
+  req: FastifyRequest<{ Body: { profile_id?: number; profile_uuid?: string; url: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { profile_id, profile_uuid, url } = req.body || {};
+    if (!url) {
+      return reply.status(400).send({ success: false, error: 'URL é obrigatória' });
+    }
+
+    const { dockerManager } = await import('../managers/docker.manager.js');
+    const { profileRepository } = await import('../repositories/profile.repository.js');
+
+    let targetContainer: string | null = null;
+    if (profile_uuid) {
+      targetContainer = `browser-profile-${profile_uuid}`;
+    } else if (profile_id) {
+      const profile = await profileRepository.findById(profile_id);
+      if (profile) {
+        targetContainer = `browser-profile-${profile.uuid}`;
+      }
+    }
+
+    if (!targetContainer) {
+      const containers = await dockerManager.syncAllRunningContainersWithLatestExtension();
+      if (containers.containers.length > 0) {
+        targetContainer = containers.containers[0];
+      }
+    }
+
+    if (!targetContainer) {
+      return reply.status(404).send({ success: false, error: 'Nenhum servidor/perfil ativo encontrado' });
+    }
+
+    const opened = await dockerManager.openUrlInContainer(targetContainer, url);
+    return reply.send({ success: opened, container: targetContainer, url });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+
 

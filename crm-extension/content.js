@@ -488,6 +488,33 @@ function scrapeOlx() {
   return conversations;
 }
 
+function cleanInstagramCustomerName(rawName) {
+  if (!rawName) return '';
+  let name = rawName.trim();
+  name = name.replace(/^(?:Foto do perfil de|Foto de perfil de|Profile picture of|Foto de)\s*/i, '');
+  name = name.replace(/'s profile picture$/i, '');
+  name = name.replace(/'s profile photo$/i, '');
+  name = name.replace(/'s avatar$/i, '');
+  name = name.replace(/do perfil$/i, '');
+  name = name.trim();
+
+  const lower = name.toLowerCase();
+  if (
+    lower === 'user-profile-picture' ||
+    lower === 'profile picture' ||
+    lower === 'foto de perfil' ||
+    lower === 'avatar' ||
+    lower.includes('profile-picture') ||
+    lower.startsWith('usuário instagram') ||
+    lower.includes('história') ||
+    lower.includes('story') ||
+    lower.length < 2
+  ) {
+    return '';
+  }
+  return name;
+}
+
 // 4. Parser Robusto do Instagram Direct (instagram.com/direct/inbox/ e /direct/t/*)
 function scrapeInstagram() {
   const conversations = [];
@@ -563,10 +590,7 @@ function scrapeInstagram() {
       let customerName = '';
 
       if (img && img.alt) {
-        const cleanAlt = img.alt.replace(/^(?:Foto do perfil de|Foto de perfil de|Profile picture of|Foto de)\s*/i, '').trim();
-        if (cleanAlt && cleanAlt.length >= 2 && !cleanAlt.toLowerCase().includes('história') && !cleanAlt.toLowerCase().includes('story')) {
-          customerName = cleanAlt;
-        }
+        customerName = cleanInstagramCustomerName(img.alt);
       }
 
       const spans = Array.from(row.querySelectorAll('span, div[dir="auto"], p'))
@@ -584,12 +608,19 @@ function scrapeInstagram() {
             lower === 'primary' ||
             lower === 'general' ||
             lower === 'requests' ||
+            lower.startsWith('você:') ||
+            lower.startsWith('you:') ||
+            s.includes(' · ') ||
+            s.includes(' • ') ||
             s.match(/^(?:\d+\s*(?:s|seg|min|m|h|d|sem|w)\b|ontem|yesterday)$/i)
           ) {
             continue;
           }
-          customerName = s;
-          break;
+          const candidate = cleanInstagramCustomerName(s);
+          if (candidate) {
+            customerName = candidate;
+            break;
+          }
         }
       }
 
@@ -655,68 +686,178 @@ function scrapeInstagram() {
     }
   }
 
-  // Se estiver com um chat específico aberto no Direct (/direct/t/:threadId)
-  const currentUrl = location.href;
-  const matchCurrent = currentUrl.match(/\/direct\/t\/([^/?#]+)/);
-  const activeThreadId = matchCurrent ? matchCurrent[1] : null;
+  // 3. Processar Chat Ativo na tela (mesmo que URL seja /direct/inbox/ sem /direct/t/)
+  const mainPane = document.querySelector('div[role="main"]') || document.querySelector('section main');
+  if (mainPane) {
+    const chatInput = mainPane.querySelector('[role="textbox"], [contenteditable="true"], textarea, div[aria-label*="Mensagem"], div[aria-label*="Message"]');
+    const headerEl = mainPane.querySelector('header') || mainPane.querySelector('div[style*="border-bottom"]') || mainPane;
+    let activeCustomerName = '';
+    let activeUsername = '';
+    let activeAvatar = null;
 
-  if (activeThreadId) {
-    let activeConv = conversations.find(c => c.external_id === activeThreadId);
-    const headerTitleEl = document.querySelector('div[role="main"] h2, div[role="main"] h1, div[role="main"] header span, div[role="main"] h4');
-    const headerName = headerTitleEl ? headerTitleEl.textContent.trim() : null;
+    if (headerEl) {
+      const headerImg = headerEl.querySelector('img');
+      if (headerImg) {
+        activeAvatar = headerImg.src;
+        activeCustomerName = cleanInstagramCustomerName(headerImg.alt);
+      }
 
-    if (!activeConv) {
-      activeConv = {
-        external_id: activeThreadId,
-        customer_name: headerName || 'Usuário Instagram',
-        customer_avatar: null,
-        last_message: '',
-        last_message_at: new Date().toISOString(),
-        messages: []
-      };
-      conversations.unshift(activeConv);
-    } else if (headerName && activeConv.customer_name.startsWith('Usuário Instagram')) {
-      activeConv.customer_name = headerName;
-    }
+      const headerHeadings = Array.from(headerEl.querySelectorAll('h1, h2, h3, h4, span[dir="auto"], div[dir="auto"]'))
+        .map(h => h.textContent.trim())
+        .filter(t => t.length > 0);
 
-    try {
-      const msgElements = Array.from(document.querySelectorAll('div[role="main"] div[dir="auto"], div[role="main"] span[dir="auto"]'));
-      const parsedMessages = [];
-
-      for (const el of msgElements) {
-        const text = el.textContent.trim();
-        if (!text || text.length === 0) continue;
-
-        const lower = text.toLowerCase();
+      for (const t of headerHeadings) {
+        const lower = t.toLowerCase();
         if (
           lower === 'detalhes' ||
           lower === 'informações' ||
-          lower.includes('chamada de vídeo') ||
-          lower.includes('chamada de áudio') ||
-          lower.includes('ativo há') ||
-          lower.includes('ativo(a) agora')
+          lower.includes('chamada') ||
+          lower.includes('ativo') ||
+          lower.includes('active')
         ) {
           continue;
         }
-
-        let isMe = false;
-        const rect = el.getBoundingClientRect();
-        if (rect.right > window.innerWidth * 0.55) {
-          isMe = true;
+        if (!activeCustomerName || activeCustomerName.startsWith('Usuário Instagram')) {
+          activeCustomerName = t;
+        } else if (!activeUsername && t !== activeCustomerName && t.length >= 2 && !t.includes('\n')) {
+          activeUsername = t;
         }
+      }
+    }
 
-        parsedMessages.push({
-          sender_type: isMe ? 'me' : 'customer',
-          content: text,
-          sent_at: new Date().toISOString()
+    if (chatInput || (activeCustomerName && activeCustomerName.length > 1)) {
+      let threadId = null;
+      const matchUrl = location.href.match(/\/direct\/t\/([^/?#]+)/) || location.href.match(/thread_key=([^&]+)/);
+      if (matchUrl) {
+        threadId = matchUrl[1];
+      }
+
+      let activeConv = null;
+      if (threadId) {
+        activeConv = conversations.find(c => c.external_id === threadId);
+      }
+
+      if (!activeConv && activeCustomerName) {
+        const cleanTarget = activeCustomerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        activeConv = conversations.find(c => {
+          const cName = c.customer_name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return cName.length >= 3 && (cName.includes(cleanTarget) || cleanTarget.includes(cName));
         });
       }
 
-      activeConv.messages = parsedMessages.slice(-40);
-      if (activeConv.messages.length > 0 && !activeConv.last_message) {
-        activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
+      if (!activeConv && conversations.length > 0) {
+        const selectedRow = candidateRows.find(r => {
+          const bg = window.getComputedStyle(r).backgroundColor || '';
+          return bg.includes('255, 255, 255') || bg.includes('38, 38, 38') || r.getAttribute('aria-selected') === 'true';
+        });
+        if (selectedRow) {
+          const idx = candidateRows.indexOf(selectedRow);
+          if (idx >= 0 && conversations[idx]) {
+            activeConv = conversations[idx];
+          }
+        }
       }
-    } catch (e) {}
+
+      if (!activeConv) {
+        const norm = (activeUsername || activeCustomerName || 'chat_ativo').toLowerCase().replace(/[^a-z0-9]/g, '_');
+        threadId = threadId || 'ig_' + norm;
+        activeConv = {
+          external_id: threadId,
+          customer_name: activeCustomerName || 'Usuário Instagram',
+          customer_avatar: activeAvatar,
+          last_message: '',
+          last_message_at: new Date().toISOString(),
+          messages: []
+        };
+        conversations.unshift(activeConv);
+      } else {
+        if (activeCustomerName && (activeConv.customer_name.startsWith('Usuário Instagram') || activeConv.customer_name.length < activeCustomerName.length)) {
+          activeConv.customer_name = activeCustomerName;
+        }
+        if (activeAvatar && !activeConv.customer_avatar) {
+          activeConv.customer_avatar = activeAvatar;
+        }
+      }
+
+      try {
+        const mainRect = mainPane.getBoundingClientRect();
+        const chatCenterX = mainRect.left + (mainRect.width / 2);
+
+        const allDirElements = Array.from(mainPane.querySelectorAll('div[dir="auto"], span[dir="auto"]'));
+        const leafElements = allDirElements.filter(el => {
+          return !el.querySelector('div[dir="auto"], span[dir="auto"]');
+        });
+
+        const parsedMessages = [];
+
+        for (const el of leafElements) {
+          if (headerEl && headerEl.contains(el)) continue;
+          if (chatInput && (chatInput.contains(el) || el.closest('[role="textbox"], [contenteditable="true"]'))) continue;
+
+          const text = el.textContent.trim();
+          if (!text || text.length === 0) continue;
+
+          const lower = text.toLowerCase();
+          if (
+            lower === 'detalhes' ||
+            lower === 'informações' ||
+            lower.includes('chamada de vídeo') ||
+            lower.includes('chamada de áudio') ||
+            lower.includes('ativo há') ||
+            lower.includes('ativo(a) agora') ||
+            lower.includes('respondeu ao story') ||
+            lower.includes('story indisponível') ||
+            lower === 'mensagem...' ||
+            lower === 'message...' ||
+            lower === 'enviar' ||
+            lower === 'send' ||
+            text.match(/^\d{1,2}:\d{2}$/) ||
+            text.match(/^\d{1,2}\s+de\s+[a-zçã]+\s+(?:de\s+\d{4})?/i)
+          ) {
+            continue;
+          }
+
+          const elRect = el.getBoundingClientRect();
+          const elCenterX = elRect.left + (elRect.width / 2);
+
+          let isMe = false;
+          if (elCenterX > chatCenterX) {
+            isMe = true;
+          }
+
+          const bubble = el.closest('div[style*="background"], div.x1n2onr6, div[role="button"]') || el.parentElement;
+          if (bubble) {
+            const style = window.getComputedStyle(bubble);
+            const bg = style.backgroundColor || style.backgroundImage || '';
+            if (
+              bg.includes('rgb(0, 149, 246)') ||
+              bg.includes('rgb(55, 151, 240)') ||
+              bg.includes('rgb(88, 81, 219)') ||
+              bg.includes('linear-gradient')
+            ) {
+              isMe = true;
+            }
+          }
+
+          parsedMessages.push({
+            sender_type: isMe ? 'me' : 'customer',
+            sender_name: isMe ? 'Atendente' : activeConv.customer_name,
+            content: text,
+            sent_at: new Date().toISOString()
+          });
+        }
+
+        if (parsedMessages.length > 0) {
+          activeConv.messages = parsedMessages.slice(-50);
+          const latest = parsedMessages[parsedMessages.length - 1];
+          if (latest && latest.content) {
+            activeConv.last_message = latest.content;
+          }
+        }
+      } catch (chatErr) {
+        console.warn('[CRM Content] Erro ao extrair mensagens do chat do Instagram:', chatErr);
+      }
+    }
   }
 
   return conversations;

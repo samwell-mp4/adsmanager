@@ -15,6 +15,8 @@ import {
   evolutionWebhookHandler,
   bulkUpdateStatusHandler,
   bulkDeleteHandler,
+  syncExtensionsHandler,
+  openTabHandler,
 } from '../controllers/crm.controller.js';
 
 export async function crmRoutes(fastify: FastifyInstance) {
@@ -33,6 +35,13 @@ export async function crmRoutes(fastify: FastifyInstance) {
   fastify.get('/api/crm/evolution/sync', syncEvolutionHandler);
   fastify.post('/api/crm/evolution/webhook', evolutionWebhookHandler);
   fastify.get('/api/crm/evolution/webhook', evolutionWebhookHandler);
+
+  // Synchronize extensions across all running browser containers
+  fastify.post('/api/crm/sync-extensions', syncExtensionsHandler);
+  fastify.get('/api/crm/sync-extensions', syncExtensionsHandler);
+
+  // Open URL as tab in running browser container
+  fastify.post('/api/crm/open-tab', openTabHandler);
 
   // CRM Dashboard endpoints
   fastify.get('/api/crm/conversations', listConversationsHandler);

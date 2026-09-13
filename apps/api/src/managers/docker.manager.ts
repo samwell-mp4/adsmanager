@@ -428,14 +428,21 @@ export class DockerManager {
   async injectZipIntoContainer(containerName: string, extFolderName: string, zipBase64: string): Promise<boolean> {
     try {
       const script = `
-mkdir -p /opt/extensions/${extFolderName} /home/browser/extensions/${extFolderName} /home/browser/profile/custom_extensions/${extFolderName} /home/browser/Desktop/${extFolderName} /home/browser/Downloads/${extFolderName} /tmp
+mkdir -p /opt/extensions/${extFolderName} /opt/extensions/dashboard_crm /home/browser/extensions/${extFolderName} /home/browser/extensions/dashboard_crm /home/browser/profile/custom_extensions/${extFolderName} /home/browser/profile/custom_extensions/dashboard_crm /home/browser/Desktop/${extFolderName} /home/browser/Desktop/dashboard_crm /root/Desktop/${extFolderName} /root/Desktop/dashboard_crm /home/browser/Downloads/${extFolderName} /home/browser/Downloads/dashboard_crm /tmp
 echo "${zipBase64}" | base64 -d > /tmp/injected_${extFolderName}.zip
 unzip -o -q /tmp/injected_${extFolderName}.zip -d /opt/extensions/${extFolderName}
+cp -rf /opt/extensions/${extFolderName}/* /opt/extensions/dashboard_crm/ 2>/dev/null || true
 cp -rf /opt/extensions/${extFolderName}/* /home/browser/extensions/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/extensions/dashboard_crm/ 2>/dev/null || true
 cp -rf /opt/extensions/${extFolderName}/* /home/browser/profile/custom_extensions/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/profile/custom_extensions/dashboard_crm/ 2>/dev/null || true
 cp -rf /opt/extensions/${extFolderName}/* /home/browser/Desktop/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/Desktop/dashboard_crm/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /root/Desktop/${extFolderName}/ 2>/dev/null || true
+cp -rf /opt/extensions/${extFolderName}/* /root/Desktop/dashboard_crm/ 2>/dev/null || true
 cp -rf /opt/extensions/${extFolderName}/* /home/browser/Downloads/${extFolderName}/ 2>/dev/null || true
-chmod -R 777 /opt/extensions /home/browser/extensions /home/browser/profile/custom_extensions /home/browser/Desktop /home/browser/Downloads
+cp -rf /opt/extensions/${extFolderName}/* /home/browser/Downloads/dashboard_crm/ 2>/dev/null || true
+chmod -R 777 /opt/extensions /home/browser/extensions /home/browser/profile/custom_extensions /home/browser/Desktop /root/Desktop /home/browser/Downloads /root/Downloads
 rm -f /tmp/injected_${extFolderName}.zip
 `;
       return await this.execInContainer(containerName, ['bash', '-c', script]);
@@ -474,6 +481,61 @@ rm -f /tmp/injected_${extFolderName}.zip
       return injected;
     } catch (err: any) {
       console.warn(`[DockerManager] Failed to inject official CRM extension into ${containerName}:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Syncs all running browser profile containers with the latest version of the CRM extension.
+   */
+  async syncAllRunningContainersWithLatestExtension(): Promise<{ synced: number; containers: string[] }> {
+    const syncedContainers: string[] = [];
+    try {
+      const containers = await this.docker.listContainers();
+      const profileContainers = containers.filter((c: any) =>
+        c.Names && c.Names.some((name: string) => name.includes('browser-profile-'))
+      );
+
+      for (const c of profileContainers) {
+        const cName = c.Names[0].replace(/^\//, '');
+        const uuidMatch = cName.match(/browser-profile-([a-f0-9-]+)/i);
+        const uuid = uuidMatch ? uuidMatch[1] : '';
+        let profileId = 1;
+        try {
+          const { profileRepository } = await import('../repositories/profile.repository.js');
+          if (uuid) {
+            const p = await profileRepository.findByUuid(uuid);
+            if (p) profileId = p.id;
+          }
+        } catch {}
+
+        const ok = await this.injectOfficialCrmExtension(cName, profileId, uuid);
+        if (ok) {
+          syncedContainers.push(cName);
+        }
+      }
+      console.log(`[DockerManager] Synced extension in ${syncedContainers.length} running containers:`, syncedContainers);
+    } catch (err: any) {
+      console.warn('[DockerManager] Notice syncing running containers:', err.message);
+    }
+    return { synced: syncedContainers.length, containers: syncedContainers };
+  }
+
+  /**
+   * Opens a URL as a new tab in the running Chrome instance inside the container.
+   */
+  async openUrlInContainer(containerName: string, url: string): Promise<boolean> {
+    try {
+      // 1. DevTools Protocol (CDP) /json/new
+      const cdpCmd = `curl -s "http://127.0.0.1:9222/json/new?${url}" || true`;
+      await this.execInContainer(containerName, ['bash', '-c', cdpCmd]);
+
+      // 2. Chrome CLI singleton
+      const cliCmd = `su - browser -c 'DISPLAY=:1 google-chrome-stable "${url}"' &`;
+      await this.execInContainer(containerName, ['bash', '-c', cliCmd]);
+      return true;
+    } catch (err: any) {
+      console.warn(`[DockerManager] Error opening URL ${url} in ${containerName}:`, err.message);
       return false;
     }
   }

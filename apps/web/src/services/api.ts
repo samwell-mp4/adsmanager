@@ -358,6 +358,22 @@ export const api = {
     });
     return handleResponse<{ success: boolean; deleted_count: number }>(res);
   },
+
+  async syncCrmExtensions(): Promise<{ success: boolean; synced: number; containers: string[] }> {
+    const res = await fetch(`${API_BASE}/crm/sync-extensions`, {
+      method: 'POST',
+    });
+    return handleResponse<{ success: boolean; synced: number; containers: string[] }>(res);
+  },
+
+  async openCrmTab(data: { profile_id?: number; profile_uuid?: string; url: string }): Promise<{ success: boolean; container?: string; url: string }> {
+    const res = await fetch(`${API_BASE}/crm/open-tab`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<{ success: boolean; container?: string; url: string }>(res);
+  },
 };
 
 

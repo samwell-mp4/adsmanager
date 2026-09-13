@@ -109,9 +109,13 @@ fi
 
 if [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ]; then
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
+    cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/dashboard_crm 2>/dev/null || true
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Downloads/adsmanager_crm 2>/dev/null || true
+    cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Downloads/dashboard_crm 2>/dev/null || true
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /root/Desktop/adsmanager_crm 2>/dev/null || true
+    cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /root/Desktop/dashboard_crm 2>/dev/null || true
     cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /root/Downloads/adsmanager_crm 2>/dev/null || true
+    cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /root/Downloads/dashboard_crm 2>/dev/null || true
 fi
 
 chown -R browser:browser /home/browser /opt/extensions 2>/dev/null || true
@@ -129,7 +133,10 @@ while true; do
     if [ -d "/home/browser/profile/custom_extensions" ]; then
         cp -rf /home/browser/profile/custom_extensions/* /opt/extensions/ 2>/dev/null || true
         cp -rf /home/browser/profile/custom_extensions/* /home/browser/extensions/ 2>/dev/null || true
-        [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ] && cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
+        if [ -d "/home/browser/profile/custom_extensions/adsmanager_crm" ]; then
+            cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/adsmanager_crm 2>/dev/null || true
+            cp -rf /home/browser/profile/custom_extensions/adsmanager_crm /home/browser/Desktop/dashboard_crm 2>/dev/null || true
+        fi
     fi
 
     CUSTOM_EXTS=""
@@ -179,7 +186,8 @@ while true; do
         --lang=${LOCALE} \
         ${LOAD_EXT_FLAG} \
         ${CHROME_PROXY_ARGS} \
-        "about:blank" &
+        "https://www.instagram.com/direct/inbox/" \
+        "https://www.instagram.com/accounts/insights/?timeframe=30" &
 
     CHROME_PID=$!
 

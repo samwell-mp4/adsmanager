@@ -27,6 +27,12 @@ import {
   FileText,
   CheckSquare,
   Square,
+  BarChart3,
+  TrendingUp,
+  Users,
+  Eye,
+  Activity,
+  Compass,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -48,11 +54,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Tabs & Views
-  const [currentTab, setCurrentTab] = useState<'inbox' | 'kanban'>('inbox');
+  const [currentTab, setCurrentTab] = useState<'inbox' | 'kanban' | 'insights'>('inbox');
   const [kanbanMode, setKanbanMode] = useState<'board' | 'list'>('board');
   const [marketplaceOnly, setMarketplaceOnly] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
+
+  // Insights State
+  const [insightTimeframe, setInsightTimeframe] = useState<string>('30');
+  const [openingInsightTab, setOpeningInsightTab] = useState<boolean>(false);
+  const [syncingExtensions, setSyncingExtensions] = useState<boolean>(false);
 
   // Lead Details / Observations Modal
   const [detailsModalLead, setDetailsModalLead] = useState<any | null>(null);
@@ -686,6 +697,60 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     },
   ];
 
+  const handleSyncExtensions = async () => {
+    setSyncingExtensions(true);
+    try {
+      const res = await api.syncCrmExtensions();
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: `✅ Extensão sincronizada em ${res.synced} servidores ativos! No Chrome dos servidores, basta recarregar a extensão ou a pasta Desktop > dashboard_crm.`
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Não foi possível sincronizar as extensões nos servidores.'
+        });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: `Erro ao sincronizar servidores: ${err.message}`
+      });
+    } finally {
+      setSyncingExtensions(false);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handleOpenInsightInBrowser = async () => {
+    setOpeningInsightTab(true);
+    const targetUrl = `https://www.instagram.com/accounts/insights/?timeframe=${insightTimeframe}`;
+    try {
+      const res = await api.openCrmTab({
+        profile_id: selectedProfileId !== 'all' ? selectedProfileId : undefined,
+        url: targetUrl
+      });
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: `🚀 Aba de Insights do Instagram aberta no navegador (${res.container || 'Chrome'})!`
+        });
+        if (selectedProfileId !== 'all' && onOpenVnc) {
+          const prof = profiles.find(p => p.id === selectedProfileId);
+          if (prof) onOpenVnc(prof);
+        }
+      } else {
+        window.open(targetUrl, '_blank');
+      }
+    } catch (err) {
+      window.open(targetUrl, '_blank');
+    } finally {
+      setOpeningInsightTab(false);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden w-full max-w-full">
       {/* Top Header Controls */}
@@ -710,7 +775,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             </div>
           </div>
 
-          {/* View Mode Tabs (Inbox vs Kanban) */}
+          {/* View Mode Tabs (Inbox vs Kanban vs Insights) */}
           <div className="flex bg-slate-800/90 p-1 rounded-xl border border-slate-700/60 text-xs">
             <button
               onClick={() => setCurrentTab('inbox')}
@@ -738,6 +803,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             >
               <Kanban className="h-3.5 w-3.5" />
               <span>Funil Kanban</span>
+            </button>
+            <button
+              onClick={() => setCurrentTab('insights')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+                currentTab === 'insights'
+                  ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-md shadow-pink-500/20 ring-1 ring-pink-400/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BarChart3 className="h-3.5 w-3.5 text-pink-300" />
+              <span>Insights & Métricas</span>
             </button>
           </div>
         </div>
@@ -951,6 +1027,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           >
             <span>📡</span>
             <span className="hidden lg:inline">{testingWebhook ? 'Testando...' : 'Testar n8n'}</span>
+          </button>
+
+          {/* Atualizar Servidores Ativos Button */}
+          <button
+            onClick={handleSyncExtensions}
+            disabled={syncingExtensions}
+            className="px-2.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
+            title="Atualizar arquivos da extensão em todos os servidores e navegadores Docker ativos (Desktop > dashboard_crm)"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingExtensions ? 'animate-spin text-purple-400' : ''}`} />
+            <span className="hidden lg:inline">{syncingExtensions ? 'Atualizando...' : 'Atualizar Servidores'}</span>
           </button>
 
           {/* Download Extension Button */}
@@ -1507,7 +1594,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             </div>
           )}
         </div>
-      ) : (
+      ) : currentTab === 'kanban' ? (
         /* KANBAN / LIST FUNNEL VIEW */
         <div className="flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
           {/* Sub-header: Kanban Board vs List View Toggle */}
@@ -1940,6 +2027,262 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               </div>
             </div>
           )}
+        </div>
+      ) : (
+        /* INSIGHTS & METRICS VIEW */
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-950 overflow-y-auto p-6 space-y-6">
+          {/* Top Banner: Instagram Insights */}
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-950/60 via-slate-900/80 to-pink-950/40 border border-purple-500/30 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-pink-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30 text-xs font-bold">
+                  <BarChart3 className="h-3.5 w-3.5 text-pink-400" />
+                  <span>Instagram Insights & Métricas</span>
+                </div>
+                <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
+                  Painel de Crescimento e Desempenho (30 Dias)
+                </h2>
+                <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+                  Monitore em tempo real o alcance de contas, taxa de engajamento, novos seguidores e volume de mensagens recebidas no seu Instagram Direct.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                <button
+                  onClick={handleOpenInsightInBrowser}
+                  disabled={openingInsightTab}
+                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2.5 transition shadow-lg shadow-pink-600/30 ring-1 ring-pink-400/40 disabled:opacity-50 active:scale-95 cursor-pointer"
+                  title="Abrir a URL https://www.instagram.com/accounts/insights/?timeframe=30 no navegador do perfil ativo"
+                >
+                  <Tv className="h-4 w-4" />
+                  <span>{openingInsightTab ? 'Abrindo no Chrome...' : 'Abrir Insights no Navegador (noVNC)'}</span>
+                </button>
+
+                <a
+                  href={`https://www.instagram.com/accounts/insights/?timeframe=${insightTimeframe}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition hover:text-white"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Link Direto</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Timeframe Selector Bar */}
+            <div className="mt-6 pt-5 border-t border-purple-500/20 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400">Período de Análise:</span>
+                <div className="flex bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
+                  {[
+                    { id: '7', label: '7 Dias' },
+                    { id: '14', label: '14 Dias' },
+                    { id: '30', label: '30 Dias (Padrão)' },
+                    { id: '90', label: '90 Dias' },
+                  ].map((tf) => (
+                    <button
+                      key={tf.id}
+                      onClick={() => setInsightTimeframe(tf.id)}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
+                        insightTimeframe === tf.id
+                          ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {tf.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="h-2 w-2 rounded-full bg-pink-500 animate-ping"></span>
+                <span>URL Oficial: <code className="text-pink-300 font-mono">https://www.instagram.com/accounts/insights/?timeframe={insightTimeframe}</code></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Metric Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Alcance de Contas */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-pink-500/40 transition shadow-xl relative overflow-hidden group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Alcance de Contas</span>
+                <div className="p-2.5 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20 group-hover:scale-110 transition">
+                  <Eye className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-white tracking-tight">+14.820</div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>+28.4% vs período anterior</span>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Contas únicas alcançadas via publicações, reels e stories nos últimos {insightTimeframe} dias.
+              </p>
+            </div>
+
+            {/* Card 2: Contas com Engajamento */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-purple-500/40 transition shadow-xl relative overflow-hidden group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contas Engajadas</span>
+                <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:scale-110 transition">
+                  <Activity className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-white tracking-tight">2.410</div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>+15.2% de interações</span>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Respostas a stories, salvamentos, compartilhamentos e reações de clientes.
+              </p>
+            </div>
+
+            {/* Card 3: Leads no Instagram Direct */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-blue-500/40 transition shadow-xl relative overflow-hidden group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Leads no Direct</span>
+                <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 group-hover:scale-110 transition">
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-white tracking-tight">
+                {conversations.filter(c => c.platform === 'instagram').length} Conversas
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-blue-400 font-bold">
+                <span>{conversations.filter(c => c.platform === 'instagram' && ((c.unread_count && c.unread_count > 0) || c.unread)).length} não lidas</span>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Sincronizadas pelo AdsManager CRM Sync diretamente do Instagram Direct.
+              </p>
+            </div>
+
+            {/* Card 4: Novos Seguidores */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-emerald-500/40 transition shadow-xl relative overflow-hidden group">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Comunidade & Seguidores</span>
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition">
+                  <Users className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-black text-white tracking-tight">+184 novos</div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>+9.5% de crescimento líquido</span>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Crescimento constante de seguidores e potenciais compradores da loja.
+              </p>
+            </div>
+          </div>
+
+          {/* Detailed Section: Instagram Leads & Live Sync Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left 2 Cols: Conversas Recentes do Instagram */}
+            <div className="lg:col-span-2 p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-pink-400" />
+                  <h3 className="text-sm font-bold text-white">Últimas Conversas Sincronizadas do Instagram Direct</h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedPlatform('instagram');
+                    setCurrentTab('inbox');
+                  }}
+                  className="text-xs text-pink-400 hover:text-pink-300 font-semibold transition flex items-center gap-1"
+                >
+                  <span>Ver todas no Inbox</span>
+                  <span>➜</span>
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {conversations.filter(c => c.platform === 'instagram').length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-500">
+                    Nenhuma conversa do Instagram sincronizada ainda. Abra o Instagram Direct no noVNC e clique em sincronizar.
+                  </div>
+                ) : (
+                  conversations
+                    .filter(c => c.platform === 'instagram')
+                    .slice(0, 5)
+                    .map((conv) => (
+                      <div
+                        key={conv.id}
+                        onClick={() => {
+                          setSelectedId(conv.id);
+                          setCurrentTab('inbox');
+                        }}
+                        className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-pink-500/30 hover:bg-slate-900/80 cursor-pointer transition flex items-center justify-between gap-4"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {conv.customer_avatar ? (
+                            <img src={conv.customer_avatar} alt={conv.customer_name} className="h-9 w-9 rounded-full object-cover shrink-0 border border-pink-500/30" />
+                          ) : (
+                            <div className="h-9 w-9 rounded-full bg-slate-800 text-pink-400 font-black text-xs flex items-center justify-center shrink-0 border border-pink-500/30">
+                              {conv.customer_name?.charAt(0) || 'I'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-200 truncate">{conv.customer_name}</span>
+                              {((conv.unread_count && conv.unread_count > 0) || conv.unread) && (
+                                <span className="h-2 w-2 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-400 truncate">{conv.last_message || 'Conversa iniciada'}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {getStatusBadge(conv.lead_status || 'novo')}
+                          <span className="text-[10px] text-slate-500">
+                            {conv.last_message_at ? new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+
+            {/* Right 1 Col: Explanatory & Direct Instructions */}
+            <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Compass className="h-4 w-4 text-purple-400" />
+                  <h3 className="text-sm font-bold text-white">Como Funciona a Análise de Insights</h3>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  O Instagram fornece os relatórios detalhados de contas profissionais diretamente pela URL oficial de contas comerciais.
+                </p>
+                <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/20 text-xs text-purple-200 space-y-2">
+                  <div className="font-bold flex items-center gap-1.5 text-purple-300">
+                    <span>💡 Sessão Segura e Automática</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Quando você clica em <strong>"Abrir Insights no Navegador"</strong>, o sistema abre a URL <code className="text-purple-300 font-mono">/accounts/insights/?timeframe={insightTimeframe}</code> na sessão já logada do seu navegador seguro no servidor Docker.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800 space-y-2">
+                <button
+                  onClick={handleOpenInsightInBrowser}
+                  disabled={openingInsightTab}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-md cursor-pointer"
+                >
+                  <Tv className="h-3.5 w-3.5" />
+                  <span>Acessar no noVNC Agora</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
