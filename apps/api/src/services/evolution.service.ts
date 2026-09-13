@@ -92,10 +92,15 @@ export class EvolutionService {
   async sendTextMessage(numberOrJid: string, text: string): Promise<{ success: boolean; data?: any; error?: string }> {
     const url = `${this.config.baseUrl}/message/sendText/${this.config.instanceName}`;
 
-    // Limpar número (remover @s.whatsapp.net se houver ou caracteres especiais)
-    let cleanNumber = numberOrJid.replace(/@.*$/, '').replace(/\D/g, '');
-    if (!cleanNumber) {
-      cleanNumber = numberOrJid;
+    // Se já tiver JID com @ (ex: @lid, @s.whatsapp.net, @g.us), preserva integralmente.
+    // Se for apenas número com formatação (+55 11 9999-9999), limpa para apenas dígitos.
+    let recipient = (numberOrJid || '').trim();
+    if (!recipient.includes('@')) {
+      recipient = recipient.replace(/\D/g, '');
+    }
+
+    if (!recipient) {
+      return { success: false, error: 'Destinatário/Número inválido' };
     }
 
     try {
@@ -103,7 +108,7 @@ export class EvolutionService {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify({
-          number: cleanNumber,
+          number: recipient,
           text: text,
           delay: 1000,
         }),
@@ -112,7 +117,17 @@ export class EvolutionService {
       const resData: any = await response.json().catch(() => ({}));
       if (!response.ok) {
         console.error('[Evolution] Erro no envio:', resData);
-        return { success: false, error: resData?.response?.message || 'Falha no envio WhatsApp' };
+        let errorMsg = 'Falha no envio WhatsApp';
+        if (typeof resData?.response?.message === 'string') {
+          errorMsg = resData.response.message;
+        } else if (Array.isArray(resData?.response?.message)) {
+          errorMsg = resData.response.message.map((m: any) => m.message || m.jid || JSON.stringify(m)).join(', ');
+        } else if (resData?.message) {
+          errorMsg = typeof resData.message === 'string' ? resData.message : JSON.stringify(resData.message);
+        } else if (resData?.error) {
+          errorMsg = typeof resData.error === 'string' ? resData.error : JSON.stringify(resData.error);
+        }
+        return { success: false, error: errorMsg };
       }
 
       return { success: true, data: resData };
