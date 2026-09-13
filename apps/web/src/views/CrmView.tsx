@@ -42,6 +42,7 @@ import {
   Image as ImageIcon,
   Layers,
   Truck,
+  ArrowLeft,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -68,6 +69,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [marketplaceOnly, setMarketplaceOnly] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
+  const [mobileShowDetails, setMobileShowDetails] = useState<boolean>(false);
 
   // Operational CRM States (Fase 2)
   const [statuses, setStatuses] = useState<any[]>([]);
@@ -380,9 +382,11 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
       setConversations(data);
 
-      // If nothing selected yet and on inbox tab, select first conversation
+      // If nothing selected yet and on inbox tab, select first conversation (desktop only >= 1024px)
       if (!selectedId && data && data.length > 0 && currentTab === 'inbox') {
-        setSelectedId(data[0].id);
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          setSelectedId(data[0].id);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching CRM conversations:', err);
@@ -1676,39 +1680,42 @@ ${quotesList}
   return (
     <div className="h-full flex flex-col bg-[#F8FAFC] text-slate-800 overflow-hidden w-full max-w-full font-sans">
       {/* Top Header Controls - Clean White SaaS */}
-      <div className="px-6 py-2.5 border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs">
+      <div className={`px-3 sm:px-6 py-2.5 border-b border-slate-200 bg-white items-center justify-between gap-3 shrink-0 shadow-xs ${
+        selectedId !== null && currentTab === 'inbox' ? 'hidden lg:flex' : 'flex flex-wrap'
+      }`}>
         {/* Left branding & view switcher */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
             <div className="p-2 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20">
               <MessageSquare className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                CRM Comercial Omnichannel
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium flex items-center gap-1">
+              <h1 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
+                <span>CRM Comercial</span>
+                <span className="hidden sm:inline">Omnichannel</span>
+                <span className="text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Operacional Ativo
+                  Ativo
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[10px] sm:text-[11px] text-slate-500 hidden sm:block">
                 Central Integrada de Atendimento, Leads & Follow-ups
               </p>
             </div>
           </div>
 
           {/* View Mode Tabs (Inbox vs Kanban vs Insights) */}
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs shrink-0">
             <button
               onClick={() => setCurrentTab('inbox')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'inbox'
                   ? 'bg-white text-blue-600 shadow-xs border border-slate-200/80 font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <LayoutList className="h-3.5 w-3.5" />
-              <span>Inbox & Chat</span>
+              <span>Inbox</span>
               {unreadConversations.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-white font-black text-[9px] animate-pulse">
                   {unreadConversations.length}
@@ -1717,31 +1724,31 @@ ${quotesList}
             </button>
             <button
               onClick={() => setCurrentTab('kanban')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'kanban'
                   ? 'bg-white text-blue-600 shadow-xs border border-slate-200/80 font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Kanban className="h-3.5 w-3.5" />
-              <span>Funil Kanban</span>
+              <span>Kanban</span>
             </button>
             <button
               onClick={() => setCurrentTab('insights')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 ${
                 currentTab === 'insights'
                   ? 'bg-white text-pink-600 shadow-xs border border-pink-200 font-bold'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <BarChart3 className="h-3.5 w-3.5 text-pink-500" />
-              <span>Insights & Métricas</span>
+              <span>Métricas</span>
             </button>
           </div>
         </div>
 
         {/* Global Filters & Polling Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-none flex-nowrap sm:flex-wrap">
           {/* Follow-ups Global Button with Counter */}
           <button
             onClick={() => setShowGlobalFollowupsModal(true)}
@@ -2039,7 +2046,9 @@ ${quotesList}
         /* INBOX & CHAT VIEW */
         <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
           {/* Left Column: Conversations List - Clean White Style */}
-          <div className="w-80 md:w-96 shrink-0 flex-shrink-0 min-w-[320px] max-w-[380px] border-r border-slate-200 flex flex-col bg-white min-h-0 z-10 shadow-xs">
+          <div className={`shrink-0 flex-shrink-0 border-r border-slate-200 flex flex-col bg-white min-h-0 z-10 shadow-xs transition-all ${
+            selectedId !== null ? 'hidden lg:flex w-80 md:w-96 min-w-[320px] max-w-[380px]' : 'flex w-full lg:w-80 lg:md:w-96 lg:min-w-[320px] lg:max-w-[380px]'
+          }`}>
             {/* Header with Title, Lead Count & Select All */}
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
               <div className="flex items-center gap-2">
@@ -2271,13 +2280,27 @@ ${quotesList}
           </div>
 
           {/* Center Column: Active Chat Thread - Clean White Design */}
-          <div className="flex-1 min-w-0 flex flex-col bg-[#F8FAFC] min-h-0">
+          <div className={`min-w-0 flex flex-col bg-[#F8FAFC] min-h-0 flex-1 ${
+            selectedId === null ? 'hidden lg:flex' : 'flex w-full'
+          }`}>
             {activeThread ? (
               <>
                 {/* Thread Header */}
-                <div className="px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-4 shrink-0 shadow-xs">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700 shrink-0 border border-slate-200">
+                <div className="px-3 sm:px-6 py-2 sm:py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    {/* Mobile Back Button (WhatsApp Style) */}
+                    <button
+                      onClick={() => {
+                        setSelectedId(null);
+                        setActiveThread(null);
+                      }}
+                      className="lg:hidden p-2 -ml-1 rounded-xl text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition shrink-0"
+                      title="Voltar para a lista de conversas"
+                    >
+                      <ArrowLeft className="h-5 w-5 text-slate-700" />
+                    </button>
+
+                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700 shrink-0 border border-slate-200">
                       {activeThread.conversation.customer_avatar ? (
                         <img
                           src={activeThread.conversation.customer_avatar}
@@ -2289,12 +2312,12 @@ ${quotesList}
                       )}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-sm font-bold text-slate-900 truncate">
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <h2 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                           {activeThread.conversation.customer_name}
                         </h2>
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold text-white uppercase ${
+                          className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold text-white uppercase ${
                             activeThread.conversation.platform === 'facebook'
                               ? 'bg-blue-600'
                               : activeThread.conversation.platform === 'whatsapp'
@@ -2308,8 +2331,8 @@ ${quotesList}
                         </span>
                       </div>
                       {activeThread.conversation.product_title && (
-                        <p className="text-xs text-blue-600 font-medium truncate flex items-center gap-1">
-                          <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
+                        <p className="text-[11px] sm:text-xs text-blue-600 font-medium truncate flex items-center gap-1">
+                          <ShoppingBag className="h-3 w-3 shrink-0" />
                           <span className="truncate">{activeThread.conversation.product_title}</span>
                           {activeThread.conversation.product_price && (
                             <span className="text-emerald-600 font-bold ml-1">
@@ -2321,13 +2344,23 @@ ${quotesList}
                     </div>
                   </div>
 
-                  {/* Actions: Status Dropdown, Follow-up Shortcut, noVNC Link & Delete */}
-                  <div className="flex items-center gap-2 shrink-0">
+                  {/* Actions: Status Dropdown, Mobile Ficha Shortcut, Follow-up Shortcut, noVNC Link & Delete */}
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    {/* Mobile Details / Comanda Toggle Button */}
+                    <button
+                      onClick={() => setMobileShowDetails(true)}
+                      className="xl:hidden px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+                      title="Ver Ficha do Lead & Emitir Comanda"
+                    >
+                      <ShoppingBag className="h-3.5 w-3.5 text-blue-600" />
+                      <span className="hidden xs:inline">Comanda</span>
+                    </button>
+
                     {/* Status Dropdown */}
                     <select
                       value={activeThread.conversation.lead_status || 'novo'}
                       onChange={(e) => handleStatusChange(activeThread.conversation.id, e.target.value)}
-                      className="bg-white border border-slate-200 text-xs text-slate-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs"
+                      className="bg-white border border-slate-200 text-xs text-slate-800 rounded-xl px-2 sm:px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium shadow-xs max-w-[120px] sm:max-w-none"
                     >
                       {statuses.length > 0 ? (
                         statuses.map((s) => (
@@ -2544,7 +2577,26 @@ ${quotesList}
 
           {/* Right Column: Ficha Comercial Operacional do Cliente - 4 Tabs */}
           {activeThread && (
-            <div className="w-80 shrink-0 flex-shrink-0 min-w-[300px] border-l border-slate-200 bg-white flex flex-col min-h-0 hidden xl:flex shadow-xs">
+            <div className={`${
+              mobileShowDetails
+                ? 'fixed inset-0 z-50 bg-white flex flex-col min-h-0 w-full animate-in slide-in-from-bottom duration-200'
+                : 'w-80 shrink-0 flex-shrink-0 min-w-[300px] border-l border-slate-200 bg-white flex-col min-h-0 hidden xl:flex shadow-xs'
+            }`}>
+              {/* Mobile Drawer Close Header */}
+              {mobileShowDetails && (
+                <div className="xl:hidden px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <User className="h-4 w-4 text-blue-600" />
+                    Ficha Comercial & Comanda
+                  </span>
+                  <button
+                    onClick={() => setMobileShowDetails(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
               {/* Client Top Header in Sidebar */}
               <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                 <div className="flex items-center gap-3 mb-2">
