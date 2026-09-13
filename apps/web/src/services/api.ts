@@ -290,11 +290,17 @@ export const api = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
-  async updateCrmLeadStatus(id: number, lead_status: string, notes?: string): Promise<any> {
+  async updateCrmLeadStatus(
+    id: number,
+    lead_status?: string,
+    notes?: string,
+    customer_phone?: string,
+    deal_value?: string
+  ): Promise<any> {
     const res = await fetch(`${API_BASE}/crm/conversations/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_status, notes }),
+      body: JSON.stringify({ lead_status, notes, customer_phone, deal_value }),
     });
     const data = await handleResponse<any>(res);
     return data?.data !== undefined ? data.data : data;

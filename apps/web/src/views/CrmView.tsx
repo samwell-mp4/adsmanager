@@ -17,6 +17,14 @@ import {
   Volume2,
   VolumeX,
   Store,
+  Settings,
+  Edit3,
+  Phone,
+  DollarSign,
+  X,
+  Plus,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -39,9 +47,35 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
   // Tabs & Views
   const [currentTab, setCurrentTab] = useState<'inbox' | 'kanban'>('inbox');
+  const [kanbanMode, setKanbanMode] = useState<'board' | 'list'>('board');
   const [marketplaceOnly, setMarketplaceOnly] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
+
+  // Lead Details / Observations Modal
+  const [detailsModalLead, setDetailsModalLead] = useState<any | null>(null);
+  const [modalStatus, setModalStatus] = useState<string>('novo');
+  const [modalNotes, setModalNotes] = useState<string>('');
+  const [modalPhone, setModalPhone] = useState<string>('');
+  const [modalDealValue, setModalDealValue] = useState<string>('');
+  const [savingLeadDetails, setSavingLeadDetails] = useState<boolean>(false);
+
+  // Quick reply templates with localStorage persistence
+  const [quickTemplates, setQuickTemplates] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('crm_quick_templates');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      'Olá! Está disponível sim, você tem interesse?',
+      'Fazemos o envio hoje mesmo com código de rastreio!',
+      'Qual seria a sua região/bairro para combinar a entrega?',
+      'Aceitamos pagamento via PIX, Cartão ou dinheiro na entrega.',
+      'Pode me passar seu WhatsApp para acertarmos os detalhes?'
+    ];
+  });
+  const [showQuickSettings, setShowQuickSettings] = useState<boolean>(false);
+  const [newTemplateInput, setNewTemplateInput] = useState<string>('');
 
   // Filters
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
@@ -53,16 +87,6 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prevLastMsgTimeRef = useRef<Record<number, string>>({});
   const initialLoadDone = useRef(false);
-
-  // Quick reply templates
-  const quickTemplates = [
-    'Olá! Está disponível sim, você tem interesse?',
-    'Fazemos o envio hoje mesmo com código de rastreio!',
-    'Qual seria a sua região/bairro para combinar a entrega?',
-    'Aceitamos pagamento via PIX, Cartão ou dinheiro na entrega.',
-    'Pode me passar seu WhatsApp para acertarmos os detalhes?'
-  ];
-
   const [testingWebhook, setTestingWebhook] = useState(false);
 
   // Modern 2-tone notification sound (synthesized with Web Audio API)
@@ -102,7 +126,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     }
   };
 
-  // Helper to ensure 100% unique clients/leads in UI
+  // Helper to ensure 100% unique clients/leads in UI strictly sorted by last message time
   const deduplicateConversations = (list: any[]): any[] => {
     if (!list || !Array.isArray(list)) return [];
     const map = new Map<string, any>();
@@ -111,6 +135,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       const name = (conv.customer_name || '').trim();
       const lower = name.toLowerCase();
       if (
+        !name ||
+        name === 'Cliente Atual' ||
         lower.includes('parece que publicaste') ||
         lower.includes('pedido de mensagem') ||
         lower === 'ativo agora'
@@ -118,7 +144,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         continue;
       }
 
-      const isGeneric = !name || ['cliente', 'cliente facebook', 'cliente atual'].includes(lower);
+      const isGeneric = ['cliente', 'cliente facebook', 'cliente atual'].includes(lower);
       const key = (!isGeneric && lower.length >= 3)
         ? `${conv.platform || 'facebook'}_${lower}`
         : `${conv.platform || 'facebook'}_${conv.external_id}`;
@@ -128,7 +154,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       } else {
         const existing = map.get(key);
         const preferCurrent = (!existing.product_title && conv.product_title) ||
-          (new Date(conv.updated_at || conv.last_message_at || 0).getTime() > new Date(existing.updated_at || existing.last_message_at || 0).getTime());
+          (new Date(conv.last_message_at || conv.updated_at || 0).getTime() > new Date(existing.last_message_at || existing.updated_at || 0).getTime());
 
         if (preferCurrent) {
           map.set(key, { ...existing, ...conv });
@@ -136,7 +162,16 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       }
     }
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+
+    // ORDENAÇÃO ESTRITA: O chat mais recente fica no topo absoluto, os antigos no fim
+    result.sort((a, b) => {
+      const timeA = new Date(a.last_message_at || a.updated_at || 0).getTime();
+      const timeB = new Date(b.last_message_at || b.updated_at || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return result;
   };
 
   // Fetch conversation list
@@ -243,6 +278,98 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     }
   };
 
+  // Open lead details modal
+  const openLeadDetails = (lead: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDetailsModalLead(lead);
+    setModalStatus(lead.lead_status || 'novo');
+    setModalNotes(lead.notes || '');
+    setModalPhone(lead.customer_phone || '');
+    setModalDealValue(lead.deal_value || '');
+  };
+
+  // Save lead details (Status, Notes, Phone, Deal Value)
+  const handleSaveLeadDetails = async () => {
+    if (!detailsModalLead) return;
+    setSavingLeadDetails(true);
+    try {
+      await api.updateCrmLeadStatus(
+        detailsModalLead.id,
+        modalStatus,
+        modalNotes,
+        modalPhone,
+        modalDealValue
+      );
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === detailsModalLead.id
+            ? {
+                ...c,
+                lead_status: modalStatus,
+                notes: modalNotes,
+                customer_phone: modalPhone,
+                deal_value: modalDealValue,
+              }
+            : c
+        )
+      );
+      if (activeThread && activeThread.conversation.id === detailsModalLead.id) {
+        setActiveThread({
+          ...activeThread,
+          conversation: {
+            ...activeThread.conversation,
+            lead_status: modalStatus,
+            notes: modalNotes,
+            customer_phone: modalPhone,
+            deal_value: modalDealValue,
+          },
+        });
+      }
+      setFeedback({ type: 'success', message: 'Detalhes do lead salvos com sucesso!' });
+      setTimeout(() => setFeedback(null), 3000);
+      setDetailsModalLead(null);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Falha ao salvar detalhes: ' + err.message });
+      setTimeout(() => setFeedback(null), 4000);
+    } finally {
+      setSavingLeadDetails(false);
+    }
+  };
+
+  // Manage quick reply templates
+  const handleAddTemplate = () => {
+    const trimmed = newTemplateInput.trim();
+    if (!trimmed) return;
+    const updated = [...quickTemplates, trimmed];
+    setQuickTemplates(updated);
+    try {
+      localStorage.setItem('crm_quick_templates', JSON.stringify(updated));
+    } catch (e) {}
+    setNewTemplateInput('');
+  };
+
+  const handleDeleteTemplate = (index: number) => {
+    const updated = quickTemplates.filter((_, i) => i !== index);
+    setQuickTemplates(updated);
+    try {
+      localStorage.setItem('crm_quick_templates', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleResetTemplates = () => {
+    const defaults = [
+      'Olá! Está disponível sim, você tem interesse?',
+      'Fazemos o envio hoje mesmo com código de rastreio!',
+      'Qual seria a sua região/bairro para combinar a entrega?',
+      'Aceitamos pagamento via PIX, Cartão ou dinheiro na entrega.',
+      'Pode me passar seu WhatsApp para acertarmos os detalhes?'
+    ];
+    setQuickTemplates(defaults);
+    try {
+      localStorage.setItem('crm_quick_templates', JSON.stringify(defaults));
+    } catch (e) {}
+  };
+
   // Fetch active conversation messages
   const fetchThread = async (id: number, silent = false) => {
     if (!silent) setLoadingThread(true);
@@ -266,11 +393,12 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     setDeletingId(id);
     try {
       await api.deleteCrmConversation(id);
-      setFeedback({ type: 'success', message: 'Lead excluído com sucesso do CRM!' });
+      setConversations((prev) => prev.filter((c) => c.id !== id));
       if (selectedId === id) {
         setSelectedId(null);
         setActiveThread(null);
       }
+      setFeedback({ type: 'success', message: 'Lead excluído com sucesso do CRM!' });
       await fetchConversations(true);
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
@@ -993,16 +1121,25 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
                 {/* Quick Reply Templates Bar */}
                 <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/30 flex items-center gap-2 overflow-x-auto min-w-0 max-w-full shrink-0">
-                  <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 shrink-0">
-                    <Sparkles className="h-3 w-3 text-amber-400" />
-                    Respostas Rápidas:
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 shrink-0">
+                      <Sparkles className="h-3 w-3 text-amber-400" />
+                      Respostas Rápidas:
+                    </span>
+                    <button
+                      onClick={() => setShowQuickSettings(true)}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                      title="Configurar Mensagens Personalizadas / Rápidas"
+                    >
+                      <Settings className="h-3 w-3" />
+                    </button>
+                  </div>
                   {quickTemplates.map((template, idx) => (
                     <button
                       key={idx}
-                      onClick={() => handleSendReply(template)}
-                      disabled={sendingReply}
+                      onClick={() => setReplyText(template)}
                       className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] whitespace-nowrap transition border border-slate-700/50"
+                      title="Clique para preencher a mensagem"
                     >
                       {template}
                     </button>
@@ -1082,6 +1219,34 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     <span className="text-[10px] text-slate-500 block">Nome do Cliente</span>
                     <span className="font-semibold text-slate-200">{activeThread.conversation.customer_name}</span>
                   </div>
+                  {activeThread.conversation.customer_phone && (
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">WhatsApp / Telefone</span>
+                      <a
+                        href={`https://wa.me/${activeThread.conversation.customer_phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-emerald-400 hover:underline flex items-center gap-1"
+                      >
+                        <Phone className="h-3 w-3" />
+                        {activeThread.conversation.customer_phone}
+                      </a>
+                    </div>
+                  )}
+                  {activeThread.conversation.deal_value && (
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Valor Acordado</span>
+                      <span className="font-bold text-emerald-400">{activeThread.conversation.deal_value}</span>
+                    </div>
+                  )}
+                  {activeThread.conversation.notes && (
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">Observações</span>
+                      <p className="text-[11px] text-slate-300 italic bg-slate-900 p-2 rounded-lg border border-slate-800">
+                        {activeThread.conversation.notes}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <span className="text-[10px] text-slate-500 block">Canal de Origem</span>
                     <span className="font-semibold text-blue-400 capitalize">{activeThread.conversation.platform}</span>
@@ -1100,6 +1265,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               {/* Fast Action Buttons in Sidebar */}
               <div className="pt-2 border-t border-slate-800 space-y-2">
                 <button
+                  onClick={() => openLeadDetails(activeThread.conversation)}
+                  className="w-full py-2 px-3 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 border border-blue-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>Editar Notas & Detalhes</span>
+                </button>
+                <button
                   onClick={(e) => handleDeleteConversation(activeThread.conversation.id, activeThread.conversation.customer_name, e)}
                   className="w-full py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition"
                 >
@@ -1111,144 +1283,600 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           )}
         </div>
       ) : (
-        /* KANBAN BOARD VIEW */
-        <div className="flex-1 overflow-x-auto p-6 bg-slate-950 min-h-0 flex gap-5">
-          {KANBAN_STAGES.map((stage) => {
-            const stageLeads = conversations.filter(
-              (c) => (c.lead_status || 'novo') === stage.id
-            );
+        /* KANBAN / LIST FUNNEL VIEW */
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
+          {/* Sub-header: Kanban Board vs List View Toggle */}
+          <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between gap-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Visualização:</span>
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1">
+                <button
+                  onClick={() => setKanbanMode('board')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                    kanbanMode === 'board' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Kanban className="h-3.5 w-3.5" />
+                  <span>Funil em Cartões</span>
+                </button>
+                <button
+                  onClick={() => setKanbanMode('list')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                    kanbanMode === 'list' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                  <span>Lista Geral de Leads</span>
+                </button>
+              </div>
+            </div>
 
-            return (
-              <div
-                key={stage.id}
-                className="w-80 shrink-0 flex flex-col bg-slate-900/50 rounded-2xl border border-slate-800/80 overflow-hidden shadow-xl"
-              >
-                {/* Column Header */}
-                <div className={`p-4 border-b border-slate-800/80 bg-gradient-to-b ${stage.headerGlow} flex items-center justify-between`}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">{stage.title}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${stage.badgeClass}`}>
-                      {stageLeads.length}
-                    </span>
-                  </div>
-                </div>
+            <div className="text-xs text-slate-400 font-medium flex items-center gap-3">
+              <span>Total de Leads: <strong className="text-white">{conversations.length}</strong></span>
+              <span>Não Lidos: <strong className="text-emerald-400">{unreadConversations.length}</strong></span>
+            </div>
+          </div>
 
-                {/* Cards Container */}
-                <div className="flex-1 p-3 overflow-y-auto space-y-3">
-                  {stageLeads.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-slate-600">
-                      Nenhum lead nesta etapa
+          {kanbanMode === 'board' ? (
+            /* BOARD VIEW (COLUMNS) */
+            <div className="flex-1 overflow-x-auto p-6 min-h-0 flex gap-5">
+              {KANBAN_STAGES.map((stage) => {
+                const stageLeads = conversations.filter(
+                  (c) => (c.lead_status || 'novo') === stage.id
+                );
+
+                return (
+                  <div
+                    key={stage.id}
+                    className="w-80 shrink-0 flex flex-col bg-slate-900/50 rounded-2xl border border-slate-800/80 overflow-hidden shadow-xl"
+                  >
+                    {/* Column Header */}
+                    <div className={`p-4 border-b border-slate-800/80 bg-gradient-to-b ${stage.headerGlow} flex items-center justify-between`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">{stage.title}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${stage.badgeClass}`}>
+                          {stageLeads.length}
+                        </span>
+                      </div>
                     </div>
-                  ) : (
-                    stageLeads.map((lead) => {
-                      const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
 
-                      return (
-                        <div
-                          key={lead.id}
-                          className={`p-4 rounded-xl bg-slate-950 border transition shadow-md hover:border-slate-700 space-y-3 ${
-                            isUnread ? 'border-emerald-500/50 ring-1 ring-emerald-500/30' : 'border-slate-800'
-                          }`}
-                        >
-                          {/* Card Top: Customer & Platform */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300 shrink-0 border border-slate-700">
-                                {lead.customer_name?.charAt(0) || 'C'}
-                              </div>
-                              <div className="min-w-0">
-                                <span className="text-xs font-bold text-white truncate block">
-                                  {lead.customer_name}
-                                </span>
-                                <span className="text-[10px] text-slate-500 block capitalize">
-                                  {lead.platform} • {new Date(lead.last_message_at || lead.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                            </div>
+                    {/* Cards Container */}
+                    <div className="flex-1 p-3 overflow-y-auto space-y-3">
+                      {stageLeads.length === 0 ? (
+                        <div className="py-12 text-center text-xs text-slate-600">
+                          Nenhum lead nesta etapa
+                        </div>
+                      ) : (
+                        stageLeads.map((lead) => {
+                          const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
 
-                            {isUnread && (
-                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] animate-pulse">
-                                Novo
-                              </span>
-                            )}
-                          </div>
+                          return (
+                            <div
+                              key={lead.id}
+                              className={`p-4 rounded-xl bg-slate-950 border transition shadow-md hover:border-slate-700 space-y-3 ${
+                                isUnread ? 'border-emerald-500/50 ring-1 ring-emerald-500/30' : 'border-slate-800'
+                              }`}
+                            >
+                              {/* Card Top: Customer & Platform */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300 shrink-0 border border-slate-700">
+                                    {lead.customer_name?.charAt(0) || 'C'}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="text-xs font-bold text-white truncate block">
+                                      {lead.customer_name}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 block capitalize">
+                                      {lead.platform} • {new Date(lead.last_message_at || lead.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                </div>
 
-                          {/* Product snippet */}
-                          {lead.product_title && (
-                            <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800/80 text-[11px] space-y-0.5">
-                              <div className="text-blue-400 font-medium truncate flex items-center gap-1">
-                                <ShoppingBag className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{lead.product_title}</span>
+                                {isUnread && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[9px] animate-pulse">
+                                    Novo
+                                  </span>
+                                )}
                               </div>
-                              {lead.product_price && (
-                                <div className="text-emerald-400 font-bold text-xs">
-                                  {lead.product_price}
+
+                              {/* Product snippet */}
+                              {lead.product_title && (
+                                <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800/80 text-[11px] space-y-0.5">
+                                  <div className="text-blue-400 font-medium truncate flex items-center gap-1">
+                                    <ShoppingBag className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{lead.product_title}</span>
+                                  </div>
+                                  {lead.product_price && (
+                                    <div className="text-emerald-400 font-bold text-xs">
+                                      {lead.product_price}
+                                    </div>
+                                  )}
                                 </div>
                               )}
+
+                              {/* Lead Notes Snippet if present */}
+                              {lead.notes && (
+                                <p className="text-[11px] text-amber-300/80 italic bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg line-clamp-2">
+                                  "{lead.notes}"
+                                </p>
+                              )}
+
+                              {/* Last message */}
+                              <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed bg-slate-900/30 p-2 rounded-lg">
+                                {lead.last_message || 'Nenhuma mensagem recente'}
+                              </p>
+
+                              {/* Status Dropdown - Free transitions back and forward! */}
+                              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">Etapa:</span>
+                                <select
+                                  value={lead.lead_status || 'novo'}
+                                  onChange={(e) => handleStatusChange(lead.id, e.target.value)}
+                                  className="flex-1 bg-slate-900 border border-slate-700 text-[11px] font-bold text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-blue-500"
+                                >
+                                  <option value="novo">🔵 Novo Lead</option>
+                                  <option value="em_negociacao">🟡 Em Negociação</option>
+                                  <option value="fechado">🟢 Venda Fechada</option>
+                                  <option value="perdido">🔴 Perdido</option>
+                                </select>
+                              </div>
+
+                              {/* Fast Action Buttons Bar */}
+                              <div className="flex items-center justify-between gap-1.5 pt-1">
+                                <button
+                                  onClick={() => {
+                                    setSelectedId(lead.id);
+                                    setCurrentTab('inbox');
+                                  }}
+                                  className="flex-1 py-1.5 px-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold flex items-center justify-center gap-1 transition"
+                                  title="Abrir bate-papo com este lead"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                  <span>Chat</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => openLeadDetails(lead, e)}
+                                  className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 transition border border-slate-700"
+                                  title="Anotações e detalhes do lead"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                                  <span>Notas</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => handleDeleteConversation(lead.id, lead.customer_name, e)}
+                                  disabled={deletingId === lead.id}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                                  title="Excluir este lead permanentemente"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          )}
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* LIST / TABLE VIEW */
+            <div className="flex-1 p-6 overflow-y-auto min-h-0">
+              <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold uppercase text-slate-400 tracking-wider">
+                      <th className="p-3.5">Cliente / Origem</th>
+                      <th className="p-3.5">Produto & Preço</th>
+                      <th className="p-3.5">Status do Funil</th>
+                      <th className="p-3.5">Contato / WhatsApp</th>
+                      <th className="p-3.5">Observações</th>
+                      <th className="p-3.5">Última Mensagem</th>
+                      <th className="p-3.5 text-right">Ações Rápidas</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {conversations.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-slate-500">
+                          Nenhum lead encontrado com os filtros selecionados.
+                        </td>
+                      </tr>
+                    ) : (
+                      conversations.map((lead) => {
+                        const isUnread = (lead.unread_count && lead.unread_count > 0) || lead.unread;
 
-                          {/* Last message */}
-                          <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed bg-slate-900/30 p-2 rounded-lg">
-                            {lead.last_message || 'Nenhuma mensagem recente'}
-                          </p>
+                        return (
+                          <tr
+                            key={lead.id}
+                            className={`hover:bg-slate-800/40 transition ${
+                              isUnread ? 'bg-emerald-500/5' : ''
+                            }`}
+                          >
+                            {/* Cliente */}
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 shrink-0 border border-slate-700">
+                                  {lead.customer_name?.charAt(0) || 'C'}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-white flex items-center gap-1.5">
+                                    <span className="truncate">{lead.customer_name}</span>
+                                    {isUnread && (
+                                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 block capitalize">
+                                    {lead.platform} • {lead.profile_name || 'Perfil'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
 
-                          {/* Fast Action Buttons Bar */}
-                          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1">
-                            {/* Open Chat */}
-                            <button
-                              onClick={() => {
-                                setSelectedId(lead.id);
-                                setCurrentTab('inbox');
-                              }}
-                              className="px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold flex items-center gap-1 transition"
-                              title="Abrir bate-papo com este lead"
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              <span>Chat</span>
-                            </button>
-
-                            {/* Move status buttons */}
-                            <div className="flex items-center gap-1">
-                              {stage.nextStatus && (
-                                <button
-                                  onClick={() => handleStatusChange(lead.id, stage.nextStatus)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1 transition border border-slate-700"
-                                  title={`Mover lead para ${stage.nextStatus}`}
-                                >
-                                  <span>{stage.nextLabel}</span>
-                                </button>
+                            {/* Produto */}
+                            <td className="p-3.5">
+                              {lead.product_title ? (
+                                <div className="space-y-0.5 max-w-xs">
+                                  <div className="font-medium text-blue-400 truncate flex items-center gap-1">
+                                    <ShoppingBag className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{lead.product_title}</span>
+                                  </div>
+                                  {lead.product_price && (
+                                    <div className="text-emerald-400 font-bold text-[11px]">
+                                      {lead.product_price}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-600 italic">Geral / Não informado</span>
                               )}
+                            </td>
 
-                              {stage.altStatus && (
-                                <button
-                                  onClick={() => handleStatusChange(lead.id, stage.altStatus)}
-                                  className="px-2 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-medium transition"
-                                  title={`Marcar como ${stage.altStatus}`}
-                                >
-                                  <span>{stage.altLabel}</span>
-                                </button>
-                              )}
-
-                              {/* Delete lead */}
-                              <button
-                                onClick={(e) => handleDeleteConversation(lead.id, lead.customer_name, e)}
-                                disabled={deletingId === lead.id}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                                title="Excluir este lead"
+                            {/* Status Dropdown - Free bidirectional movement! */}
+                            <td className="p-3.5">
+                              <select
+                                value={lead.lead_status || 'novo'}
+                                onChange={(e) => handleStatusChange(lead.id, e.target.value)}
+                                className="bg-slate-900 border border-slate-700 text-xs font-bold text-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+                                <option value="novo">🔵 Novo Lead</option>
+                                <option value="em_negociacao">🟡 Em Negociação</option>
+                                <option value="fechado">🟢 Venda Fechada</option>
+                                <option value="perdido">🔴 Perdido</option>
+                              </select>
+                            </td>
+
+                            {/* WhatsApp / Telefone */}
+                            <td className="p-3.5">
+                              {lead.customer_phone ? (
+                                <a
+                                  href={`https://wa.me/${lead.customer_phone.replace(/\D/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-400 hover:underline font-semibold flex items-center gap-1 text-xs"
+                                >
+                                  <Phone className="h-3 w-3" />
+                                  <span>{lead.customer_phone}</span>
+                                </a>
+                              ) : (
+                                <button
+                                  onClick={(e) => openLeadDetails(lead, e)}
+                                  className="text-slate-500 hover:text-slate-300 text-[11px] underline flex items-center gap-1"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>Adicionar</span>
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Observações */}
+                            <td className="p-3.5 max-w-xs">
+                              {lead.notes ? (
+                                <div
+                                  onClick={(e) => openLeadDetails(lead, e)}
+                                  className="cursor-pointer text-slate-300 italic text-[11px] truncate bg-slate-950 p-1.5 rounded-lg border border-slate-800 hover:border-slate-700"
+                                  title="Clique para editar as notas"
+                                >
+                                  "{lead.notes}"
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => openLeadDetails(lead, e)}
+                                  className="text-slate-600 hover:text-slate-400 text-[11px] italic"
+                                >
+                                  + Inserir anotação
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Última Mensagem */}
+                            <td className="p-3.5 max-w-xs">
+                              <p className="text-slate-400 truncate text-[11px]">
+                                {lead.last_message || 'Sem mensagens'}
+                              </p>
+                              <span className="text-[10px] text-slate-600">
+                                {new Date(lead.last_message_at || lead.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </td>
+
+                            {/* Ações */}
+                            <td className="p-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setSelectedId(lead.id);
+                                    setCurrentTab('inbox');
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 text-xs font-semibold flex items-center gap-1 transition"
+                                  title="Abrir bate-papo"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                  <span>Chat</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => openLeadDetails(lead, e)}
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                                  title="Editar detalhes do lead"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                                </button>
+
+                                <button
+                                  onClick={(e) => handleDeleteConversation(lead.id, lead.customer_name, e)}
+                                  disabled={deletingId === lead.id}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                                  title="Excluir lead"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL: LEAD DETAILS & OBSERVATIONS */}
+      {detailsModalLead && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/20">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Editar Dados do Lead
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {detailsModalLead.customer_name} • {detailsModalLead.product_title || 'Marketplace'}
+                  </p>
                 </div>
               </div>
-            );
-          })}
+              <button
+                onClick={() => setDetailsModalLead(null)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Status */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5">
+                  Etapa do Funil de Vendas:
+                </label>
+                <select
+                  value={modalStatus}
+                  onChange={(e) => setModalStatus(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-semibold"
+                >
+                  <option value="novo">🔵 Novo Lead</option>
+                  <option value="em_negociacao">🟡 Em Negociação</option>
+                  <option value="fechado">🟢 Venda Fechada</option>
+                  <option value="perdido">🔴 Perdido / Desistência</option>
+                </select>
+              </div>
+
+              {/* Phone / WhatsApp */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3 w-3 text-emerald-400" />
+                    Telefone / WhatsApp do Cliente:
+                  </span>
+                  {modalPhone && (
+                    <a
+                      href={`https://wa.me/${modalPhone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-2.5 w-2.5" />
+                      Testar WhatsApp Web
+                    </a>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={modalPhone}
+                  onChange={(e) => setModalPhone(e.target.value)}
+                  placeholder="Ex: (11) 98765-4321"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Deal Value */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 text-emerald-400" />
+                  Valor Acordado / Proposta:
+                </label>
+                <input
+                  type="text"
+                  value={modalDealValue}
+                  onChange={(e) => setModalDealValue(e.target.value)}
+                  placeholder="Ex: R$ 79,00 à vista"
+                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Notes / Anotações */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center gap-1">
+                  <Edit3 className="h-3 w-3 text-amber-400" />
+                  Observações e Anotações Importantes:
+                </label>
+                <textarea
+                  value={modalNotes}
+                  onChange={(e) => setModalNotes(e.target.value)}
+                  placeholder="Ex: Cliente quer retirar no shopping às 15h, prefere pagamento via PIX..."
+                  rows={4}
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500 resize-none placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDetailsModalLead(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveLeadDetails}
+                disabled={savingLeadDetails}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition shadow-lg shadow-blue-600/25"
+              >
+                {savingLeadDetails ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                <span>Salvar Informações</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: QUICK REPLIES CONFIGURATION */}
+      {showQuickSettings && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/20">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Central de Respostas Rápidas
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Configure mensagens personalizadas para agilizar suas respostas manuais
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQuickSettings(false)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-5">
+              {/* Add New Template Input */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-300 block">
+                  Criar Nova Mensagem Rápida:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newTemplateInput}
+                    onChange={(e) => setNewTemplateInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTemplate();
+                      }
+                    }}
+                    placeholder="Ex: Tenho sim! Podemos enviar via Sedex hoje mesmo..."
+                    className="flex-1 p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={handleAddTemplate}
+                    disabled={!newTemplateInput.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Adicionar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Template List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Mensagens Salvas ({quickTemplates.length}):
+                  </span>
+                  <button
+                    onClick={handleResetTemplates}
+                    className="text-[11px] text-slate-500 hover:text-amber-400 underline"
+                  >
+                    Restaurar Padrões
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {quickTemplates.map((tmpl, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <span className="text-slate-200 line-clamp-2">{tmpl}</span>
+                      <button
+                        onClick={() => handleDeleteTemplate(idx)}
+                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition shrink-0"
+                        title="Remover esta mensagem"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end">
+              <button
+                onClick={() => setShowQuickSettings(false)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

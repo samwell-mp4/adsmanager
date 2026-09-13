@@ -720,6 +720,47 @@ function triggerManualScrape(origin = 'Gatilho Manual') {
   return count;
 }
 
+// Função auxiliar para converter tempo relativo do Facebook ("3 min", "1 d", "41 sem") em timestamp real preciso
+function parseFacebookRelativeTime(rawText, indexInList = 0) {
+  const now = Date.now();
+  if (!rawText) {
+    return new Date(now - (indexInList * 60 * 1000)).toISOString();
+  }
+
+  const str = rawText.trim().toLowerCase();
+
+  const timePartMatch = str.match(/(?:·|-|\\s|^)(\\d+)\\s*(s|seg|min|m|h|hora|horas|d|dia|dias|sem|semana|semanas|mês|mes|meses|a|ano|anos)(?:\\b|$)/i);
+  if (timePartMatch) {
+    const val = parseInt(timePartMatch[1], 10);
+    const unit = timePartMatch[2].toLowerCase();
+
+    let ms = 0;
+    if (unit === 's' || unit === 'seg') ms = val * 1000;
+    else if (unit === 'min' || unit === 'm') ms = val * 60 * 1000;
+    else if (unit === 'h' || unit.startsWith('hora')) ms = val * 60 * 60 * 1000;
+    else if (unit === 'd' || unit.startsWith('dia')) ms = val * 24 * 60 * 60 * 1000;
+    else if (unit === 'sem' || unit.startsWith('semana')) ms = val * 7 * 24 * 60 * 60 * 1000;
+    else if (unit === 'mês' || unit.startsWith('mes')) ms = val * 30 * 24 * 60 * 60 * 1000;
+    else if (unit === 'a' || unit.startsWith('ano')) ms = val * 365 * 24 * 60 * 60 * 1000;
+
+    return new Date(now - ms - (indexInList * 1000)).toISOString();
+  }
+
+  if (str.includes('ontem') || str.includes('yesterday')) {
+    return new Date(now - 24 * 60 * 60 * 1000 - (indexInList * 1000)).toISOString();
+  }
+
+  const timeMatch = str.match(/(\\d{1,2}):(\\d{2})/);
+  if (timeMatch) {
+    const d = new Date();
+    d.setHours(parseInt(timeMatch[1], 10), parseInt(timeMatch[2], 10), 0, 0);
+    if (d.getTime() > now) d.setDate(d.getDate() - 1);
+    return new Date(d.getTime() - (indexInList * 1000)).toISOString();
+  }
+
+  return new Date(now - (indexInList * 60 * 1000)).toISOString();
+}
+
 // 2. Parser do Facebook Marketplace Messenger (Baseado exatamente no HTML real do Facebook)
 function scrapeFacebook() {
   const conversations = [];
@@ -734,7 +775,8 @@ function scrapeFacebook() {
 
   const threadLinks = Array.from(document.querySelectorAll(rowSelectors.join(',')));
 
-  for (const link of threadLinks) {
+  for (let i = 0; i < threadLinks.length; i++) {
+    const link = threadLinks[i];
     try {
       const href = link.getAttribute('href') || '';
       const match = href.match(/\\/messages\\/t\\/(\\d+)/);
@@ -745,14 +787,11 @@ function scrapeFacebook() {
       seenIds.add(threadId);
 
       // 1. Extração do Nome do Cliente e do Produto
-      // No Facebook Marketplace, o link possui:
-      // aria-label="Conversa de grupo: Vanusa · Perfumes Brandcollection 316 - Inspiração Scandal Gold - 25ml"
       const rawAriaLabel = (link.getAttribute('aria-label') || '').trim();
       let customerName = 'Cliente Facebook';
       let productTitle = null;
 
       if (rawAriaLabel) {
-        // Remove prefixo "Conversa de grupo:", "Group conversation:", etc.
         const clean = rawAriaLabel.replace(/^(?:Conversa de grupo|Group conversation|Conversa com|Conversa|Chat)\\s*:?\\s*/i, '').trim();
         
         if (clean.includes(' · ')) {
@@ -807,13 +846,27 @@ function scrapeFacebook() {
         link.querySelector('div.x1ja2u2z.xzpqnlu')
       );
 
-      // 5. Extração da Última Mensagem
+      // 5. Extração da Última Mensagem e do Horário Real
       let lastMessage = '';
+      let rawTimeStr = '';
+
+      const abbrEl = link.querySelector('abbr');
+      if (abbrEl) {
+        rawTimeStr = (abbrEl.getAttribute('aria-label') || abbrEl.textContent || '').trim();
+      }
+
       const msgSpan = link.querySelector('span.x1j85h84, span.xlyipyv:not(:first-child)');
-      if (msgSpan) {
-        lastMessage = msgSpan.textContent.trim();
+      const rawMsgText = msgSpan ? msgSpan.textContent.trim() : '';
+
+      if (rawMsgText) {
+        if (rawMsgText.includes(' · ')) {
+          const parts = rawMsgText.split(' · ');
+          lastMessage = parts.slice(0, -1).join(' · ').trim();
+          if (!rawTimeStr) rawTimeStr = parts[parts.length - 1].trim();
+        } else {
+          lastMessage = rawMsgText;
+        }
       } else {
-        // Fallback: pega o último texto relevante
         const spans = Array.from(link.querySelectorAll('span'))
           .map(s => s.textContent.trim())
           .filter(t => t.length > 0 && !t.includes('Mensagem não lida') && !t.match(/^\\d+\\s*(min|sem|d|h|s)$/i));
@@ -822,9 +875,14 @@ function scrapeFacebook() {
         }
       }
 
-      // 6. Horário Relativo
-      const abbrEl = link.querySelector('abbr');
-      const timeStr = abbrEl ? (abbrEl.getAttribute('aria-label') || abbrEl.textContent.trim()) : null;
+      if (!rawTimeStr) {
+        const timeMatch = (link.textContent || '').match(/(?:·|-|\\s)(\\d+\\s*(?:s|seg|min|m|h|d|sem|w|mês|mes|ano))\\b/i);
+        if (timeMatch) {
+          rawTimeStr = timeMatch[1];
+        }
+      }
+
+      const calculatedLastMessageAt = parseFacebookRelativeTime(rawTimeStr, i);
 
       conversations.push({
         external_id: threadId,
@@ -833,7 +891,7 @@ function scrapeFacebook() {
         product_title: productTitle,
         product_image: productImage,
         last_message: lastMessage,
-        last_message_at: new Date().toISOString(),
+        last_message_at: calculatedLastMessageAt,
         unread: isUnread,
         messages: []
       });
@@ -849,74 +907,113 @@ function scrapeFacebook() {
 
   if (activeThreadId) {
     let activeConv = conversations.find(c => c.external_id === activeThreadId);
-    if (!activeConv) {
-      activeConv = {
-        external_id: activeThreadId,
-        customer_name: 'Cliente Atual',
-        messages: []
-      };
-      conversations.push(activeConv);
-    }
 
-    // Extrair produto e nome do cliente do cabeçalho da conversa aberta se ainda não tiver
+    // Se não achou na lista lateral, tenta obter dados reais do cabeçalho
+    let headerCustomerName = null;
+    let headerProductTitle = null;
+    let headerProductPrice = null;
+
     try {
       const mainHeader = document.querySelector('div[role="main"] h2, div[role="main"] h1, [data-pagelet="MWThreadHeaderContent"]');
       if (mainHeader) {
         const headerText = mainHeader.textContent.trim();
         if (headerText.includes(' · ')) {
           const parts = headerText.split(' · ');
-          if (activeConv.customer_name === 'Cliente Atual' || activeConv.customer_name === 'Cliente Facebook') {
-            activeConv.customer_name = parts[0].trim();
-          }
-          if (!activeConv.product_title) {
-            activeConv.product_title = parts.slice(1).join(' · ').trim();
-          }
+          headerCustomerName = parts[0].trim();
+          headerProductTitle = parts.slice(1).join(' · ').trim();
+        } else if (headerText.length > 0 && !headerText.toLowerCase().includes('marketplace') && !headerText.toLowerCase().includes('messenger')) {
+          headerCustomerName = headerText;
         }
       }
 
       const allText = document.querySelector('div[role="main"]')?.textContent || '';
       const priceMatch = allText.match(/R\\$\\s?[\\d.,]+/);
-      if (priceMatch && !activeConv.product_price) {
-        activeConv.product_price = priceMatch[0];
-      }
+      if (priceMatch) headerProductPrice = priceMatch[0];
     } catch (e) {}
 
-    const messageBubbles = Array.from(document.querySelectorAll('div[dir="auto"], [role="row"] div[dir="auto"]'))
-      .filter(el => {
-        const t = el.textContent.trim();
-        return t.length > 0 && t.length < 2500 && !el.closest('a[href*="/messages/t/"]');
-      });
-
-    const parsedMessages = [];
-    const seenBubbles = new Set();
-
-    for (const el of messageBubbles) {
-      const text = el.textContent.trim();
-      if (seenBubbles.has(text) || !text) continue;
-      seenBubbles.add(text);
-
-      let isMe = false;
-      const rowContainer = el.closest('[role="row"]') || el.parentElement;
-      const aria = (rowContainer?.getAttribute('aria-label') || el.getAttribute('aria-label') || '').toLowerCase();
-      if (aria.includes('você enviou') || aria.includes('you sent') || aria.includes('tu:')) {
-        isMe = true;
-      } else {
-        const rect = el.getBoundingClientRect();
-        if (rect.right > window.innerWidth * 0.65) {
-          isMe = true;
-        }
+    if (!activeConv && (headerCustomerName || headerProductTitle)) {
+      activeConv = {
+        external_id: activeThreadId,
+        customer_name: headerCustomerName || 'Cliente',
+        product_title: headerProductTitle || null,
+        product_price: headerProductPrice || null,
+        last_message_at: new Date().toISOString(),
+        messages: []
+      };
+      conversations.push(activeConv);
+    } else if (activeConv) {
+      if (headerCustomerName && (activeConv.customer_name === 'Cliente' || activeConv.customer_name === 'Cliente Facebook' || activeConv.customer_name === 'Cliente Atual')) {
+        activeConv.customer_name = headerCustomerName;
       }
-
-      parsedMessages.push({
-        sender_type: isMe ? 'me' : 'customer',
-        content: text,
-        sent_at: new Date().toISOString()
-      });
+      if (headerProductTitle && !activeConv.product_title) activeConv.product_title = headerProductTitle;
+      if (headerProductPrice && !activeConv.product_price) activeConv.product_price = headerProductPrice;
     }
 
-    activeConv.messages = parsedMessages.slice(-30);
-    if (activeConv.messages.length > 0 && !activeConv.last_message) {
-      activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
+    if (activeConv) {
+      // Localiza APENAS o container de mensagens (grid de chat), ignorando barra lateral direita e menus
+      const chatGrid = document.querySelector('div[role="main"] div[role="grid"], div[role="main"] [data-pagelet="MWThreadMessages"], div[role="main"] [data-pagelet="MWMessageList"]');
+      const searchRoot = chatGrid || document.querySelector('div[role="main"]');
+
+      if (searchRoot) {
+        const uiBlacklist = [
+          'já se podem classificar',
+          'as pessoas podem dar classificações',
+          'classificar ',
+          'mark as sold',
+          'more options',
+          'personalizar conversa',
+          'membros da conversa',
+          'multimédia',
+          'privacidade e suporte',
+          'pesquisar',
+          'silenciar',
+          'marketplace'
+        ];
+
+        const messageBubbles = Array.from(searchRoot.querySelectorAll('div[dir="auto"]'))
+          .filter(el => {
+            if (el.closest('button, [role="button"], a[role="link"], [data-pagelet="MWThreadHeaderContent"], [role="complementary"], h1, h2, h3, h4')) {
+              return false;
+            }
+            const t = el.textContent.trim();
+            if (!t || t.length > 2500) return false;
+            const lower = t.toLowerCase();
+            if (uiBlacklist.some(b => lower.includes(b))) return false;
+            return true;
+          });
+
+        const parsedMessages = [];
+        const seenBubbles = new Set();
+
+        for (const el of messageBubbles) {
+          const text = el.textContent.trim();
+          if (seenBubbles.has(text) || !text) continue;
+          seenBubbles.add(text);
+
+          let isMe = false;
+          const rowContainer = el.closest('[role="row"]') || el.parentElement;
+          const aria = (rowContainer?.getAttribute('aria-label') || el.getAttribute('aria-label') || '').toLowerCase();
+          if (aria.includes('você enviou') || aria.includes('you sent') || aria.includes('tu:')) {
+            isMe = true;
+          } else {
+            const rect = el.getBoundingClientRect();
+            if (rect.right > window.innerWidth * 0.65) {
+              isMe = true;
+            }
+          }
+
+          parsedMessages.push({
+            sender_type: isMe ? 'me' : 'customer',
+            content: text,
+            sent_at: new Date().toISOString()
+          });
+        }
+
+        activeConv.messages = parsedMessages.slice(-30);
+        if (activeConv.messages.length > 0 && !activeConv.last_message) {
+          activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
+        }
+      }
     }
   }
 
@@ -924,13 +1021,21 @@ function scrapeFacebook() {
   const uniqueConvs = [];
   const seenLeadKeys = new Set();
   for (const c of conversations) {
-    if (c.customer_name === 'Cliente Atual' && (!c.messages || c.messages.length === 0)) {
+    const name = (c.customer_name || '').trim();
+    const lower = name.toLowerCase();
+    if (
+      !name ||
+      name === 'Cliente Atual' ||
+      lower.includes('parece que publicaste') ||
+      lower.includes('pedido de mensagem') ||
+      lower === 'ativo agora'
+    ) {
       continue;
     }
-    const normName = (c.customer_name || '').trim().toLowerCase();
-    const isGeneric = ['cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora'].includes(normName);
-    const key = (!isGeneric && normName.length >= 3)
-      ? normName + '_' + (c.product_title || '').trim().toLowerCase()
+
+    const isGeneric = ['cliente', 'cliente facebook', 'cliente atual'].includes(lower);
+    const key = (!isGeneric && lower.length >= 3)
+      ? lower + '_' + (c.product_title || '').trim().toLowerCase()
       : c.external_id;
 
     if (!seenLeadKeys.has(key)) {

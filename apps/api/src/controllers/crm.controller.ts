@@ -81,12 +81,12 @@ export async function sendReplyHandler(
 }
 
 export async function updateLeadStatusHandler(
-  req: FastifyRequest<{ Params: { id: string }; Body: { lead_status: LeadStatus; notes?: string } }>,
+  req: FastifyRequest<{ Params: { id: string }; Body: { lead_status?: LeadStatus; notes?: string; customer_phone?: string; deal_value?: string } }>,
   reply: FastifyReply
 ) {
   try {
     const id = parseInt(req.params.id, 10);
-    const updated = await crmService.updateStatus(id, req.body.lead_status, req.body.notes);
+    const updated = await crmService.updateStatus(id, req.body.lead_status, req.body.notes, req.body.customer_phone, req.body.deal_value);
     return reply.send({ success: true, data: updated });
   } catch (err: any) {
     return reply.status(500).send({ success: false, error: err.message });

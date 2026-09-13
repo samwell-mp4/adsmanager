@@ -64,9 +64,23 @@ export class CrmRepository {
         CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_conv_plat_ext_prof
         ON crm_conversations (platform, external_id, profile_id);
 
+        -- Tabela de leads/conversas excluídos pelo usuário (blacklist para não ressuscitar)
+        CREATE TABLE IF NOT EXISTS crm_deleted_conversations (
+            id SERIAL PRIMARY KEY,
+            platform VARCHAR(50) NOT NULL,
+            external_id VARCHAR(255) NOT NULL,
+            deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(platform, external_id)
+        );
+
+        -- Campos adicionais para negociação e agilidade
+        ALTER TABLE crm_conversations ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50);
+        ALTER TABLE crm_conversations ADD COLUMN IF NOT EXISTS deal_value VARCHAR(50);
+
         -- Índices de performance
         CREATE INDEX IF NOT EXISTS idx_crm_conv_platform ON crm_conversations(platform);
         CREATE INDEX IF NOT EXISTS idx_crm_conv_profile ON crm_conversations(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_conv_lastmsg ON crm_conversations(last_message_at DESC);
         CREATE INDEX IF NOT EXISTS idx_crm_conv_updated ON crm_conversations(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_crm_msg_conv ON crm_messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_crm_queue_status ON crm_outgoing_queue(status, profile_id);
@@ -81,7 +95,8 @@ export class CrmRepository {
         DELETE FROM crm_conversations 
         WHERE customer_name ILIKE '%Parece que publicaste este anúncio%'
            OR customer_name ILIKE '%Pedido de mensagem%'
-           OR customer_name ILIKE '%Ativo agora%';
+           OR customer_name ILIKE '%Ativo agora%'
+           OR customer_name = 'Cliente Atual';
       `);
 
       // 3. Mesclar e unificar conversas duplicadas por (platform, external_id)
@@ -169,9 +184,30 @@ export class CrmRepository {
     const client = await pool.connect();
     try {
       const cleanName = (data.customer_name || '').trim();
-      const isGenericName = !cleanName || ['cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora'].includes(cleanName.toLowerCase());
 
-      // 1. Se for um cliente com nome específico real, verificar se já existe conversa com ele nesta plataforma
+      // 0. Bloqueia lixo, strings de status e prompts de sistema
+      if (
+        !cleanName ||
+        cleanName === 'Cliente Atual' ||
+        cleanName.toLowerCase().includes('parece que publicaste') ||
+        cleanName.toLowerCase().includes('pedido de mensagem') ||
+        cleanName.toLowerCase() === 'ativo agora'
+      ) {
+        return null as any;
+      }
+
+      // 1. Verifica se esta conversa foi previamente excluída pelo usuário
+      const delCheck = await client.query(
+        'SELECT 1 FROM crm_deleted_conversations WHERE platform = $1 AND external_id = $2',
+        [data.platform, data.external_id]
+      );
+      if (delCheck.rows.length > 0) {
+        return null as any;
+      }
+
+      const isGenericName = ['cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora'].includes(cleanName.toLowerCase());
+
+      // 2. Se for um cliente com nome específico real, verificar se já existe conversa com ele nesta plataforma
       if (!isGenericName && cleanName.length >= 3) {
         const matchRes = await client.query(`
           SELECT id, external_id, customer_name, product_title FROM crm_conversations 
@@ -182,7 +218,7 @@ export class CrmRepository {
               OR product_title IS NULL 
               OR LOWER(TRIM(product_title)) = LOWER(TRIM($3))
             )
-          ORDER BY (external_id = $4) DESC, (product_title IS NOT NULL) DESC, updated_at DESC
+          ORDER BY (external_id = $4) DESC, (product_title IS NOT NULL) DESC, last_message_at DESC, id DESC
           LIMIT 1
         `, [data.platform, cleanName, data.product_title || null, data.external_id]);
 
@@ -283,16 +319,38 @@ export class CrmRepository {
     content: string;
     external_id?: string | null;
     sent_at?: Date | string | null;
-  }): Promise<CrmMessage> {
+  }): Promise<CrmMessage | null> {
     const client = await pool.connect();
     try {
+      const cleanContent = (data.content || '').trim();
+      if (!cleanContent) return null;
+
+      // Filtra ruídos de interface do Facebook
+      const noise = [
+        'já se podem classificar',
+        'as pessoas podem dar classificações',
+        'classificar ',
+        'mark as sold',
+        'more options',
+        'personalizar conversa',
+        'membros da conversa',
+        'multimédia',
+        'privacidade e suporte',
+        'pesquisar',
+        'silenciar'
+      ];
+      const lower = cleanContent.toLowerCase();
+      if (noise.some(n => lower.includes(n))) {
+        return null;
+      }
+
       // Avoid inserting exact duplicate message if same content sent within recent window
       const checkQuery = `
         SELECT id FROM crm_messages
         WHERE conversation_id = $1 AND content = $2 AND sender_type = $3
         ORDER BY id DESC LIMIT 1;
       `;
-      const existing = await client.query(checkQuery, [data.conversation_id, data.content, data.sender_type]);
+      const existing = await client.query(checkQuery, [data.conversation_id, cleanContent, data.sender_type]);
       if (existing.rows.length > 0) {
         return existing.rows[0] as CrmMessage;
       }
@@ -309,7 +367,7 @@ export class CrmRepository {
         data.conversation_id,
         data.sender_type,
         data.sender_name || null,
-        data.content,
+        cleanContent,
         data.external_id || null,
         data.sent_at || null,
       ]);
@@ -320,7 +378,7 @@ export class CrmRepository {
   }
 
   /**
-   * Lists conversations with filters and profile name
+   * Lists conversations with filters and profile name, ordered strictly by last message time
    */
   async listConversations(filter: {
     profile_id?: number;
@@ -366,7 +424,7 @@ export class CrmRepository {
         query += ` AND (c.customer_name ILIKE $${params.length} OR c.product_title ILIKE $${params.length} OR c.last_message ILIKE $${params.length})`;
       }
 
-      query += ` ORDER BY c.updated_at DESC`;
+      query += ` ORDER BY c.last_message_at DESC, c.id DESC`;
 
       const limit = filter.limit || 50;
       params.push(limit);
@@ -423,9 +481,15 @@ export class CrmRepository {
   }
 
   /**
-   * Updates lead status or notes
+   * Updates lead status, notes, phone or deal value
    */
-  async updateConversationLead(id: number, data: { lead_status?: LeadStatus; notes?: string; unread_count?: number }): Promise<CrmConversation | null> {
+  async updateConversationLead(id: number, data: {
+    lead_status?: LeadStatus;
+    notes?: string;
+    customer_phone?: string;
+    deal_value?: string;
+    unread_count?: number;
+  }): Promise<CrmConversation | null> {
     const client = await pool.connect();
     try {
       const updates: string[] = ['updated_at = NOW()'];
@@ -439,6 +503,16 @@ export class CrmRepository {
       if (data.notes !== undefined) {
         params.push(data.notes);
         updates.push(`notes = $${params.length}`);
+      }
+
+      if (data.customer_phone !== undefined) {
+        params.push(data.customer_phone);
+        updates.push(`customer_phone = $${params.length}`);
+      }
+
+      if (data.deal_value !== undefined) {
+        params.push(data.deal_value);
+        updates.push(`deal_value = $${params.length}`);
       }
 
       if (data.unread_count !== undefined) {
@@ -547,6 +621,17 @@ export class CrmRepository {
   async deleteConversation(id: number): Promise<boolean> {
     const client = await pool.connect();
     try {
+      // Localiza platform e external_id antes de deletar para gravar na blacklist
+      const check = await client.query(`SELECT platform, external_id FROM crm_conversations WHERE id = $1`, [id]);
+      if (check.rows.length > 0) {
+        const { platform, external_id } = check.rows[0];
+        await client.query(`
+          INSERT INTO crm_deleted_conversations (platform, external_id)
+          VALUES ($1, $2)
+          ON CONFLICT (platform, external_id) DO UPDATE SET deleted_at = NOW();
+        `, [platform, external_id]);
+      }
+
       const res = await client.query(`DELETE FROM crm_conversations WHERE id = $1 RETURNING id;`, [id]);
       return (res.rowCount || 0) > 0;
     } finally {

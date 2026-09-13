@@ -100,6 +100,8 @@ export class CrmService {
         unread_count: convData.unread ? 1 : 0,
       });
 
+      if (!conversation) continue;
+
       syncedConvs++;
 
       // Save messages if present
@@ -252,10 +254,15 @@ export class CrmService {
   }
 
   /**
-   * Updates lead status
+   * Updates lead status, notes, phone, and deal value
    */
-  async updateStatus(conversationId: number, leadStatus: LeadStatus, notes?: string) {
-    return crmRepository.updateConversationLead(conversationId, { lead_status: leadStatus, notes });
+  async updateStatus(conversationId: number, leadStatus?: LeadStatus, notes?: string, customerPhone?: string, dealValue?: string) {
+    return crmRepository.updateConversationLead(conversationId, {
+      lead_status: leadStatus,
+      notes,
+      customer_phone: customerPhone,
+      deal_value: dealValue
+    });
   }
 
   /**
