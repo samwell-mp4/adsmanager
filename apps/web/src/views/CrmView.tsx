@@ -134,7 +134,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   // Initial load & filter change
   useEffect(() => {
     fetchConversations();
-  }, [selectedPlatform, selectedProfileId, selectedStatus]);
+  }, [selectedPlatform, selectedProfileId, selectedStatus, searchTerm]);
 
   // Load thread when selectedId changes
   useEffect(() => {
@@ -568,12 +568,26 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
                     Carregando mensagens do chat...
                   </div>
-                ) : activeThread.messages.length === 0 ? (
-                  <div className="py-20 text-center text-slate-600 text-xs">
-                    Nenhuma mensagem registrada nesta conversa ainda.
-                  </div>
-                ) : (
-                  activeThread.messages.map((msg, index) => {
+                ) : (() => {
+                  const threadMessages = activeThread.messages && activeThread.messages.length > 0
+                    ? activeThread.messages
+                    : (activeThread.conversation.last_message ? [{
+                        id: -1,
+                        sender_type: 'customer',
+                        sender_name: activeThread.conversation.customer_name,
+                        content: activeThread.conversation.last_message,
+                        sent_at: activeThread.conversation.last_message_at || activeThread.conversation.updated_at
+                      }] : []);
+
+                  if (threadMessages.length === 0) {
+                    return (
+                      <div className="py-20 text-center text-slate-600 text-xs">
+                        Nenhuma mensagem registrada nesta conversa ainda.
+                      </div>
+                    );
+                  }
+
+                  return threadMessages.map((msg: any, index: number) => {
                     const isMe = msg.sender_type === 'me';
                     return (
                       <div
@@ -592,13 +606,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                           {msg.content}
                         </div>
                         <span className="text-[10px] text-slate-500 mt-1 px-1">
-                          {new Date(msg.sent_at || msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(msg.sent_at || msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {isMe && ' • Enviado'}
                         </span>
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
                 <div ref={messagesEndRef} />
               </div>
 

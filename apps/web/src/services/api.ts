@@ -203,8 +203,8 @@ export const api = {
 
   async getProfileExtensions(profileId: number): Promise<any[]> {
     const res = await fetch(`${API_BASE}/profiles/${profileId}/extensions`);
-    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
-    return json.data || [];
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   async installOfficialExtension(profileId: number): Promise<{ success: boolean; message: string; data?: any }> {
@@ -244,8 +244,8 @@ export const api = {
 
   async getGlobalExtensions(): Promise<any[]> {
     const res = await fetch(`${API_BASE}/extensions`);
-    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
-    return json.data || [];
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   async deleteGlobalExtension(extId: string): Promise<void> {
@@ -269,14 +269,14 @@ export const api = {
     if (params?.search) query.append('search', params.search);
 
     const res = await fetch(`${API_BASE}/crm/conversations?${query.toString()}`);
-    const json = await handleResponse<{ success: boolean; data: any[] }>(res);
-    return json.data || [];
+    const data = await handleResponse<any>(res);
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   async getCrmConversationDetails(id: number): Promise<{ conversation: any; messages: any[] }> {
     const res = await fetch(`${API_BASE}/crm/conversations/${id}`);
-    const json = await handleResponse<{ success: boolean; data: { conversation: any; messages: any[] } }>(res);
-    return json.data;
+    const data = await handleResponse<any>(res);
+    return data?.conversation ? data : (data?.data || data);
   },
 
   async sendCrmReply(id: number, message: string): Promise<{ success: boolean; message: string }> {
@@ -294,8 +294,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lead_status, notes }),
     });
-    const json = await handleResponse<{ success: boolean; data: any }>(res);
-    return json.data;
+    const data = await handleResponse<any>(res);
+    return data?.data !== undefined ? data.data : data;
   },
 
   async initCrmTables(): Promise<{ success: boolean; message: string }> {
