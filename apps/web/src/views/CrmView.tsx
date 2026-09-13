@@ -2286,8 +2286,8 @@ ${quotesList}
             {activeThread ? (
               <>
                 {/* Thread Header */}
-                <div className="px-3 sm:px-6 py-2 sm:py-3 border-b border-slate-200 bg-white flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs">
-                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div className="px-3 sm:px-6 py-2 sm:py-3 border-b border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 shrink-0 shadow-xs">
+                  <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto min-w-0">
                     {/* Mobile Back Button (WhatsApp Style) */}
                     <button
                       onClick={() => {
@@ -2345,7 +2345,7 @@ ${quotesList}
                   </div>
 
                   {/* Actions: Status Dropdown, Mobile Ficha Shortcut, Follow-up Shortcut, noVNC Link & Delete */}
-                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto overflow-x-auto scrollbar-none pb-1 sm:pb-0">
                     {/* Mobile Details / Comanda Toggle Button */}
                     <button
                       onClick={() => setMobileShowDetails(true)}
