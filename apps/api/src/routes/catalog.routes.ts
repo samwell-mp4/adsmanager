@@ -14,18 +14,33 @@ import {
 
 export async function catalogRoutes(fastify: FastifyInstance) {
   // Categorias
-  fastify.get('/api/catalog/categories', listCategoriesHandler);
-  fastify.post('/api/catalog/categories', createCategoryHandler);
-  fastify.patch('/api/catalog/categories/:id', updateCategoryHandler);
-  fastify.delete('/api/catalog/categories/:id', deleteCategoryHandler);
+  const catListUrls = ['/api/catalog/categories', '/catalog/categories'];
+  for (const u of catListUrls) {
+    fastify.get(u, listCategoriesHandler);
+    fastify.post(u, createCategoryHandler);
+  }
+  const catItemUrls = ['/api/catalog/categories/:id', '/catalog/categories/:id'];
+  for (const u of catItemUrls) {
+    fastify.patch(u, updateCategoryHandler);
+    fastify.delete(u, deleteCategoryHandler);
+  }
 
   // Produtos
-  fastify.get('/api/catalog/products', listProductsHandler);
-  fastify.get('/api/catalog/products/:id', getProductHandler);
-  fastify.post('/api/catalog/products', createProductHandler);
-  fastify.put('/api/catalog/products/:id', updateProductHandler);
-  fastify.delete('/api/catalog/products/:id', deleteProductHandler);
+  const prodListUrls = ['/api/catalog/products', '/catalog/products'];
+  for (const u of prodListUrls) {
+    fastify.get(u, listProductsHandler);
+    fastify.post(u, createProductHandler);
+  }
+  const prodItemUrls = ['/api/catalog/products/:id', '/catalog/products/:id'];
+  for (const u of prodItemUrls) {
+    fastify.get(u, getProductHandler);
+    fastify.put(u, updateProductHandler);
+    fastify.delete(u, deleteProductHandler);
+  }
 
   // Importação em lote
-  fastify.post('/api/catalog/import', importProductsHandler);
+  const importUrls = ['/api/catalog/import', '/catalog/import'];
+  for (const u of importUrls) {
+    fastify.post(u, importProductsHandler);
+  }
 }

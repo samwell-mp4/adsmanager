@@ -216,11 +216,22 @@ export class CrmService {
   /**
    * Sends a reply from the operator dashboard to the customer via extension or CDP or Evolution API
    */
-  async sendReply(conversationId: number, messageText: string): Promise<{ success: boolean; message: string; outgoing_id?: number }> {
+  async sendReply(
+    conversationId: number,
+    messageText: string,
+    mediaUrl?: string
+  ): Promise<{ success: boolean; message?: string; outgoing_id?: number }> {
     const conversation = await crmRepository.getConversationById(conversationId);
     if (!conversation) {
       throw new Error('Conversa não encontrada');
     }
+
+    const cleanText = (messageText || '').trim();
+    const finalContent = mediaUrl
+      ? cleanText
+        ? `${cleanText}\n\n📷 ${mediaUrl}`
+        : `📷 ${mediaUrl}`
+      : cleanText;
 
     // 1. WhatsApp Evolution API envio direto
     if (conversation.platform === 'whatsapp') {
@@ -229,7 +240,7 @@ export class CrmService {
         conversation_id: conversation.id,
         sender_type: 'me',
         sender_name: 'Atendente',
-        content: messageText.trim(),
+        content: finalContent,
         sent_at: sentDate,
       });
 
@@ -238,18 +249,24 @@ export class CrmService {
         platform: 'whatsapp',
         external_id: conversation.external_id,
         customer_name: conversation.customer_name,
-        last_message: messageText.trim(),
+        last_message: finalContent,
         last_message_at: sentDate,
       });
 
-      const res = await evolutionService.sendTextMessage(conversation.external_id, messageText.trim());
+      let res: any;
+      if (mediaUrl) {
+        res = await evolutionService.sendMediaMessage(conversation.external_id, mediaUrl, cleanText);
+      } else {
+        res = await evolutionService.sendTextMessage(conversation.external_id, cleanText);
+      }
+
       if (!res.success) {
         throw new Error(res.error || 'Erro ao enviar via WhatsApp (Evolution API)');
       }
 
       return {
         success: true,
-        message: 'Mensagem enviada com sucesso no WhatsApp!',
+        message: mediaUrl ? 'Mídia enviada com sucesso no WhatsApp!' : 'Mensagem enviada com sucesso no WhatsApp!',
       };
     }
 
@@ -262,7 +279,7 @@ export class CrmService {
       conversation_id: conversation.id,
       sender_type: 'me',
       sender_name: 'Atendente',
-      content: messageText.trim(),
+      content: finalContent,
       sent_at: new Date(),
     });
 
@@ -272,7 +289,7 @@ export class CrmService {
       platform: conversation.platform,
       external_id: conversation.external_id,
       customer_name: conversation.customer_name,
-      last_message: messageText.trim(),
+      last_message: finalContent,
       last_message_at: new Date(),
     });
 

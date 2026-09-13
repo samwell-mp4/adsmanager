@@ -290,11 +290,11 @@ export const api = {
     return data?.conversation ? data : (data?.data || data);
   },
 
-  async sendCrmReply(id: number, message: string): Promise<{ success: boolean; message: string }> {
+  async sendCrmReply(id: number, message: string, media_url?: string): Promise<{ success: boolean; message: string }> {
     const res = await fetch(`${API_BASE}/crm/conversations/${id}/reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, media_url }),
     });
     return handleResponse<{ success: boolean; message: string }>(res);
   },

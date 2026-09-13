@@ -141,6 +141,58 @@ export class EvolutionService {
   }
 
   /**
+   * Enviar mídia (foto, vídeo ou documento) via WhatsApp (Evolution API)
+   */
+  async sendMediaMessage(
+    numberOrJid: string,
+    mediaUrl: string,
+    caption?: string,
+    mediaType: 'image' | 'video' | 'document' = 'image'
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const url = `${this.config.baseUrl}/message/sendMedia/${this.config.instanceName}`;
+
+    let recipient = (numberOrJid || '').trim();
+    if (!recipient.includes('@')) {
+      recipient = recipient.replace(/\D/g, '');
+    }
+
+    if (!recipient) {
+      return { success: false, error: 'Destinatário/Número inválido' };
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          number: recipient,
+          mediatype: mediaType,
+          media: mediaUrl,
+          caption: caption || '',
+          delay: 1000,
+        }),
+      });
+
+      const resData: any = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        console.error('[Evolution] Erro no envio de mídia:', resData);
+        let errorMsg = 'Falha no envio de mídia no WhatsApp';
+        if (typeof resData?.response?.message === 'string') {
+          errorMsg = resData.response.message;
+        } else if (resData?.message) {
+          errorMsg = typeof resData.message === 'string' ? resData.message : JSON.stringify(resData.message);
+        }
+        return { success: false, error: errorMsg };
+      }
+
+      return { success: true, data: resData };
+    } catch (err: any) {
+      console.error('[Evolution] Falha ao enviar mídia:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Sincronizar todos os chats ativos do WhatsApp para a base CRM
    */
   async syncWhatsAppChats(): Promise<{ count: number; updated: number }> {

@@ -37,6 +37,7 @@ export const CatalogView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Form States
   const [formData, setFormData] = useState({
@@ -124,8 +125,25 @@ export const CatalogView: React.FC = () => {
   }, [products, searchTerm, selectedCategory, stockFilter, statusFilter]);
 
   // Open Modal to Create
+  // Currency / number parser supporting both "49,90" and "49.90"
+  const parseCurrencyInput = (val: any): number | null => {
+    if (val === undefined || val === null || val === '') return null;
+    if (typeof val === 'number') return isNaN(val) ? null : val;
+    const str = String(val).trim();
+    if (!str) return null;
+    if (str.includes(',')) {
+      const normalized = str.replace(/\./g, '').replace(',', '.');
+      const n = parseFloat(normalized);
+      return isNaN(n) ? null : n;
+    }
+    const n = parseFloat(str);
+    return isNaN(n) ? null : n;
+  };
+
+  // Open Modal to Create
   const handleOpenCreate = () => {
     setEditingProduct(null);
+    setModalError(null);
     setFormData({
       sku: `PRD-${Date.now().toString().slice(-6)}`,
       name: '',
@@ -148,6 +166,7 @@ export const CatalogView: React.FC = () => {
   // Open Modal to Edit
   const handleOpenEdit = (product: any) => {
     setEditingProduct(product);
+    setModalError(null);
     setFormData({
       sku: product.sku || '',
       name: product.name || '',
@@ -186,27 +205,35 @@ export const CatalogView: React.FC = () => {
   // Save Product
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
+
     if (!formData.name.trim()) {
-      setFeedback({ type: 'error', message: 'Preencha o nome do produto.' });
+      setModalError('Preencha o nome do produto.');
       return;
     }
-    if (!formData.price || Number(formData.price) < 0) {
-      setFeedback({ type: 'error', message: 'Preço de venda é obrigatório.' });
+
+    const price = parseCurrencyInput(formData.price);
+    if (price === null || price < 0) {
+      setModalError('Preço de venda é obrigatório e deve ser válido (ex: 49.90 ou 49,90).');
       return;
     }
+
+    const promotionalPrice = parseCurrencyInput(formData.promotional_price);
+    const costPrice = parseCurrencyInput(formData.cost_price);
+    const stock = parseCurrencyInput(formData.stock) || 0;
 
     setSaving(true);
     try {
       const payload = {
-        sku: formData.sku.trim() || undefined,
+        sku: formData.sku.trim() || `PRD-${Date.now().toString().slice(-6)}`,
         name: formData.name.trim(),
         brand: formData.brand.trim() || undefined,
         category_id: formData.category_id ? Number(formData.category_id) : null,
         description: formData.description.trim() || undefined,
-        price: Number(formData.price),
-        promotional_price: formData.promotional_price ? Number(formData.promotional_price) : null,
-        cost_price: formData.cost_price ? Number(formData.cost_price) : null,
-        stock: Number(formData.stock) || 0,
+        price,
+        promotional_price: promotionalPrice,
+        cost_price: costPrice,
+        stock,
         main_image: formData.main_image.trim() || undefined,
         is_active: formData.is_active,
         notes: formData.notes.trim() || undefined,
@@ -214,8 +241,8 @@ export const CatalogView: React.FC = () => {
           sku: v.sku.trim() || undefined,
           name: v.name.trim(),
           variant_type: v.variant_type,
-          price: v.price ? Number(v.price) : Number(formData.price),
-          stock: Number(v.stock) || 0,
+          price: parseCurrencyInput(v.price) || price,
+          stock: parseCurrencyInput(v.stock) || 0,
         })),
         media: mediaList.map((m, idx) => ({
           url: m.url.trim(),
@@ -224,11 +251,18 @@ export const CatalogView: React.FC = () => {
         })),
       };
 
+      let savedProduct: any = null;
       if (editingProduct) {
-        await api.updateCatalogProduct(editingProduct.id, payload);
+        savedProduct = await api.updateCatalogProduct(editingProduct.id, payload);
+        setProducts((prev) =>
+          prev.map((p) => (p.id === editingProduct.id ? { ...p, ...payload, ...(savedProduct || {}) } : p))
+        );
         setFeedback({ type: 'success', message: 'Produto atualizado com sucesso!' });
       } else {
-        await api.createCatalogProduct(payload);
+        savedProduct = await api.createCatalogProduct(payload);
+        if (savedProduct && savedProduct.id) {
+          setProducts((prev) => [savedProduct, ...prev.filter((p) => p.id !== savedProduct.id)]);
+        }
         setFeedback({ type: 'success', message: 'Produto cadastrado com sucesso!' });
       }
 
@@ -236,7 +270,9 @@ export const CatalogView: React.FC = () => {
       await fetchData();
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Erro ao salvar produto' });
+      const errMsg = err.message || 'Erro ao salvar produto no catálogo.';
+      setModalError(errMsg);
+      setFeedback({ type: 'error', message: errMsg });
     } finally {
       setSaving(false);
     }
@@ -801,6 +837,22 @@ export const CatalogView: React.FC = () => {
 
             {/* Scrollable Form Body */}
             <form onSubmit={handleSaveProduct} className="flex-1 overflow-y-auto p-6 space-y-5">
+              {modalError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs animate-fadeIn">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>{modalError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setModalError(null)}
+                    className="p-1 rounded-lg text-rose-500 hover:text-rose-800 hover:bg-rose-100 transition"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Row 1: Name, SKU, Brand */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-2">

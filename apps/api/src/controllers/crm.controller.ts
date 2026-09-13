@@ -69,15 +69,18 @@ export async function getConversationDetailsHandler(
 }
 
 export async function sendReplyHandler(
-  req: FastifyRequest<{ Params: { id: string }; Body: { message: string } }>,
+  req: FastifyRequest<{ Params: { id: string }; Body: { message?: string; media_url?: string } }>,
   reply: FastifyReply
 ) {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!req.body?.message || !req.body.message.trim()) {
-      return reply.status(400).send({ success: false, error: 'Mensagem vazia' });
+    const message = req.body?.message || '';
+    const mediaUrl = req.body?.media_url;
+
+    if (!message.trim() && !mediaUrl) {
+      return reply.status(400).send({ success: false, error: 'Mensagem ou mídia obrigatória' });
     }
-    const result = await crmService.sendReply(id, req.body.message);
+    const result = await crmService.sendReply(id, message, mediaUrl);
     return reply.send(result);
   } catch (err: any) {
     return reply.status(500).send({ success: false, error: err.message });

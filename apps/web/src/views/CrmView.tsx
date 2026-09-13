@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   MessageSquare,
   Search,
@@ -37,6 +37,10 @@ import {
   Check,
   MapPin,
   User,
+  Package,
+  Copy,
+  Image as ImageIcon,
+  Layers,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -68,7 +72,18 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [statuses, setStatuses] = useState<any[]>([]);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
   const [selectedTagFilter, setSelectedTagFilter] = useState<number | 'all'>('all');
-  const [rightPanelTab, setRightPanelTab] = useState<'RESUMO' | 'ATIVIDADES' | 'FOLLOW_UP' | 'NOTAS'>('RESUMO');
+  const [rightPanelTab, setRightPanelTab] = useState<'RESUMO' | 'ATIVIDADES' | 'FOLLOW_UP' | 'NOTAS' | 'CATALOGO'>('RESUMO');
+
+  // Omnichannel Catalog States (Fase 4)
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<any[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState<boolean>(false);
+  const [catalogSearch, setCatalogSearch] = useState<string>('');
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>('all');
+  const [selectedProductVariants, setSelectedProductVariants] = useState<Record<number, any>>({});
+  const [activeMediaGallery, setActiveMediaGallery] = useState<{ product: any; media: any[] } | null>(null);
+  const [copiedProductId, setCopiedProductId] = useState<number | null>(null);
+  const [showFloatingCatalog, setShowFloatingCatalog] = useState<boolean>(false);
 
   // Lead specifics
   const [leadNotes, setLeadNotes] = useState<any[]>([]);
@@ -821,17 +836,104 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     fetchInsights();
   }, [insightTimeframe, selectedProfileId]);
 
-  // Send reply
-  const handleSendReply = async (customText?: string) => {
-    const text = (customText || replyText).trim();
-    if (!text || !selectedId) return;
+  // Omnichannel Catalog Fetcher & Helpers (Fase 4)
+  const fetchCatalogData = async () => {
+    try {
+      setLoadingCatalog(true);
+      const [prodsRes, cats] = await Promise.all([
+        api.getCatalogProducts({ limit: 100 }).catch(() => ({ products: [] })),
+        api.getCatalogCategories().catch(() => []),
+      ]);
+      setCatalogProducts(prodsRes.products || []);
+      setCatalogCategories(cats || []);
+    } catch (err) {
+      console.warn('Erro ao carregar catálogo para o CRM:', err);
+    } finally {
+      setLoadingCatalog(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCatalogData();
+  }, []);
+
+  const generateProductPitch = (product: any, variant?: any) => {
+    const vName = variant ? ` (${variant.name})` : '';
+    const vPrice = variant && variant.price ? Number(variant.price) : Number(product.price);
+    const promo = !variant && product.promotional_price ? Number(product.promotional_price) : null;
+
+    let text = `✨ *${product.name}${vName}*\n`;
+    if (product.brand) text += `Marca: *${product.brand}*\n`;
+    if (product.description) text += `\n${product.description}\n`;
+
+    if (promo && promo < vPrice) {
+      text += `\n💰 De ~R$ ${vPrice.toFixed(2).replace('.', ',')}~ por apenas *R$ ${promo.toFixed(2).replace('.', ',')}*!`;
+    } else {
+      text += `\n💰 Valor: *R$ ${vPrice.toFixed(2).replace('.', ',')}*`;
+    }
+
+    text += `\n📦 Pronta entrega com envio rápido!`;
+    text += `\n\nComo prefere efetuar o pagamento: Pix ou Cartão?`;
+    return text;
+  };
+
+  const handleInsertProductPitch = (product: any, variant?: any, sendDirect = false) => {
+    const pitch = generateProductPitch(product, variant);
+    if (sendDirect) {
+      handleSendReply(pitch);
+    } else {
+      setReplyText(pitch);
+      setFeedback({ type: 'success', message: `Proposta de "${product.name}" inserida no campo de resposta!` });
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  };
+
+  const handleSendProductPhoto = async (product: any, imageUrl?: string) => {
+    const imgToSend = imageUrl || product.main_image || (product.media && product.media[0]?.url);
+    if (!imgToSend) {
+      setFeedback({ type: 'error', message: 'Este produto não possui imagem para envio.' });
+      return;
+    }
+    if (!selectedId) return;
+
+    setSendingReply(true);
+    try {
+      const priceVal = product.promotional_price || product.price || 0;
+      const caption = `✨ ${product.name} - R$ ${Number(priceVal).toFixed(2).replace('.', ',')}`;
+      const res = await api.sendCrmReply(selectedId, caption, imgToSend);
+      setFeedback({ type: 'success', message: res.message || 'Foto do produto enviada com sucesso!' });
+      await fetchThread(selectedId, true);
+      await fetchConversations(true);
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Falha ao enviar foto no chat' });
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const handleCopyProductInfo = (product: any, variant?: any) => {
+    const pitch = generateProductPitch(product, variant);
+    navigator.clipboard.writeText(pitch);
+    setCopiedProductId(product.id);
+    setFeedback({ type: 'success', message: `Texto comercial de "${product.name}" copiado!` });
+    setTimeout(() => {
+      setCopiedProductId(null);
+      setFeedback(null);
+    }, 2500);
+  };
+
+  // Send reply (supporting text and optional media attachment)
+  const handleSendReply = async (customText?: string, customMediaUrl?: string) => {
+    const text = (customText !== undefined ? customText : replyText).trim();
+    if ((!text && !customMediaUrl) || !selectedId) return;
 
     setSendingReply(true);
     setFeedback(null);
 
     try {
-      const res = await api.sendCrmReply(selectedId, text);
-      setReplyText('');
+      const res = await api.sendCrmReply(selectedId, text, customMediaUrl);
+      if (customText === undefined && !customMediaUrl) setReplyText('');
       setFeedback({ type: 'success', message: res.message || 'Mensagem enviada com sucesso!' });
       await fetchThread(selectedId, true);
       await fetchConversations(true);
@@ -842,6 +944,23 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       setSendingReply(false);
     }
   };
+
+  // Filtered catalog products for chat integration
+  const filteredChatCatalogProducts = useMemo(() => {
+    return catalogProducts.filter((p) => {
+      if (catalogSearch.trim()) {
+        const term = catalogSearch.toLowerCase();
+        const matchesName = p.name?.toLowerCase().includes(term);
+        const matchesSku = p.sku?.toLowerCase().includes(term);
+        const matchesBrand = p.brand?.toLowerCase().includes(term);
+        if (!matchesName && !matchesSku && !matchesBrand) return false;
+      }
+      if (catalogCategoryFilter !== 'all') {
+        if (String(p.category_id) !== String(catalogCategoryFilter)) return false;
+      }
+      return true;
+    });
+  }, [catalogProducts, catalogSearch, catalogCategoryFilter]);
 
   // Update lead status
   const handleStatusChange = async (targetId: number, newStatus: string) => {
@@ -1817,20 +1936,58 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
 
                 {/* Reply Input Bar */}
-                <div className="p-4 border-t border-slate-200 bg-white flex items-end gap-3 shrink-0">
-                  <textarea
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendReply();
+                <div className="p-4 border-t border-slate-200 bg-white flex items-end gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (rightPanelTab === 'CATALOGO') {
+                        setRightPanelTab('RESUMO');
+                      } else {
+                        setRightPanelTab('CATALOGO');
                       }
+                      setShowFloatingCatalog(true);
                     }}
-                    placeholder="Digite sua resposta (pressione Enter para enviar)..."
-                    rows={2}
-                    className="flex-1 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition resize-none placeholder:text-slate-400 font-sans"
-                  />
+                    className={`p-3 rounded-xl border text-xs font-bold transition shadow-xs flex items-center gap-1.5 shrink-0 ${
+                      rightPanelTab === 'CATALOGO'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-purple-500/25'
+                        : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200'
+                    }`}
+                    title="Abrir Catálogo de Produtos para enviar fotos e ofertas no chat"
+                  >
+                    <ShoppingBag className="h-4 w-4" />
+                    <span className="hidden sm:inline">Catálogo</span>
+                  </button>
+
+                  <div className="flex-1 relative">
+                    <textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendReply();
+                        }
+                      }}
+                      placeholder="Digite sua resposta (dica: digite /catalogo para produtos)..."
+                      rows={2}
+                      className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition resize-none placeholder:text-slate-400 font-sans"
+                    />
+                    {(replyText.includes('/catalogo') || replyText.includes('/produto')) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReplyText(prev => prev.replace('/catalogo', '').replace('/produto', '').trim());
+                          setRightPanelTab('CATALOGO');
+                          setShowFloatingCatalog(true);
+                        }}
+                        className="absolute right-3 top-3 px-2 py-1 rounded-lg bg-purple-600 text-white text-[10px] font-bold shadow-xs animate-pulse flex items-center gap-1"
+                      >
+                        <Package className="h-3 w-3" />
+                        <span>Abrir Catálogo</span>
+                      </button>
+                    )}
+                  </div>
+
                   <button
                     onClick={() => handleSendReply()}
                     disabled={sendingReply || !replyText.trim()}
@@ -2077,6 +2234,18 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   }`}
                 >
                   Notas ({leadNotes.length})
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('CATALOGO')}
+                  className={`flex-1 py-2.5 text-center transition border-b-2 flex items-center justify-center gap-1 ${
+                    rightPanelTab === 'CATALOGO'
+                      ? 'border-purple-600 text-purple-700 bg-white font-bold'
+                      : 'border-transparent hover:text-slate-800 text-purple-700'
+                  }`}
+                  title="Catálogo de Produtos para Vendas"
+                >
+                  <Package className="h-3 w-3 text-purple-600" />
+                  <span>Catálogo</span>
                 </button>
               </div>
 
@@ -2488,6 +2657,240 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                         ))
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* TAB: CATÁLOGO DE PRODUTOS NO CHAT (FASE 4) */}
+                {rightPanelTab === 'CATALOGO' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Package className="h-4 w-4 text-purple-600" />
+                        <span className="text-xs font-bold text-slate-800">Catálogo no Chat</span>
+                      </div>
+                      <button
+                        onClick={fetchCatalogData}
+                        disabled={loadingCatalog}
+                        className="text-[10px] text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        <RefreshCw className={`h-2.5 w-2.5 ${loadingCatalog ? 'animate-spin' : ''}`} />
+                        Atualizar
+                      </button>
+                    </div>
+
+                    {/* Search & Category Filter */}
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={catalogSearch}
+                          onChange={(e) => setCatalogSearch(e.target.value)}
+                          placeholder="Buscar produto ou SKU..."
+                          className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-purple-500 focus:bg-white"
+                        />
+                        {catalogSearch && (
+                          <button
+                            onClick={() => setCatalogSearch('')}
+                            className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Category Filter Pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] no-scrollbar">
+                        <button
+                          onClick={() => setCatalogCategoryFilter('all')}
+                          className={`px-2 py-0.5 rounded-full whitespace-nowrap font-medium transition ${
+                            catalogCategoryFilter === 'all'
+                              ? 'bg-purple-600 text-white shadow-2xs font-bold'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          Todos ({catalogProducts.length})
+                        </button>
+                        {catalogCategories.map((c) => {
+                          const count = catalogProducts.filter((p) => String(p.category_id) === String(c.id)).length;
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => setCatalogCategoryFilter(String(c.id))}
+                              className={`px-2 py-0.5 rounded-full whitespace-nowrap font-medium transition ${
+                                catalogCategoryFilter === String(c.id)
+                                  ? 'bg-purple-600 text-white shadow-2xs font-bold'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {c.name} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Product List */}
+                    {loadingCatalog ? (
+                      <div className="py-12 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                        <RefreshCw className="h-5 w-5 animate-spin text-purple-600" />
+                        <span>Carregando catálogo...</span>
+                      </div>
+                    ) : filteredChatCatalogProducts.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-slate-400 space-y-2">
+                        <Package className="h-8 w-8 text-slate-300 mx-auto" />
+                        <p>Nenhum produto encontrado.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredChatCatalogProducts.map((prod: any) => {
+                          const hasVariants = prod.variants && prod.variants.length > 0;
+                          const selectedVariant = selectedProductVariants[prod.id] || (hasVariants ? prod.variants[0] : null);
+                          const activePrice = selectedVariant && selectedVariant.price ? Number(selectedVariant.price) : Number(prod.price);
+                          const activeStock = selectedVariant && selectedVariant.stock !== undefined ? selectedVariant.stock : prod.stock;
+                          const hasPromo = !selectedVariant && prod.promotional_price && Number(prod.promotional_price) < Number(prod.price);
+                          const isCopied = copiedProductId === prod.id;
+
+                          return (
+                            <div
+                              key={prod.id}
+                              className="p-3 rounded-xl bg-slate-50/70 border border-slate-200 hover:border-slate-300 transition shadow-2xs space-y-2.5"
+                            >
+                              {/* Product Header Info */}
+                              <div className="flex gap-2.5 items-start">
+                                <div className="h-12 w-12 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0">
+                                  {prod.main_image ? (
+                                    <img src={prod.main_image} alt="" className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center text-slate-300">
+                                      <Package className="h-5 w-5" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    {prod.sku && (
+                                      <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-200 text-slate-700">
+                                        {prod.sku}
+                                      </span>
+                                    )}
+                                    {prod.brand && (
+                                      <span className="text-[10px] text-slate-500 truncate font-medium">
+                                        {prod.brand}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="text-xs font-bold text-slate-900 line-clamp-1 leading-snug">
+                                    {prod.name}
+                                  </h4>
+                                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                                    {hasPromo ? (
+                                      <>
+                                        <span className="text-xs font-bold text-emerald-600">
+                                          R$ {Number(prod.promotional_price).toFixed(2).replace('.', ',')}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 line-through">
+                                          R$ {Number(prod.price).toFixed(2).replace('.', ',')}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs font-bold text-slate-900">
+                                        R$ {Number(activePrice).toFixed(2).replace('.', ',')}
+                                      </span>
+                                    )}
+                                    <span className={`text-[9px] font-semibold px-1 py-0.2 rounded ml-auto ${
+                                      activeStock > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                    }`}>
+                                      {activeStock > 0 ? `${activeStock} un.` : 'Esgotado'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Variant Selector if present */}
+                              {hasVariants && (
+                                <div className="pt-0.5">
+                                  <label className="text-[10px] font-bold text-slate-500 block mb-0.5 flex items-center gap-1">
+                                    <Layers className="h-2.5 w-2.5 text-purple-600" />
+                                    Variação:
+                                  </label>
+                                  <select
+                                    value={selectedVariant?.id || ''}
+                                    onChange={(e) => {
+                                      const v = prod.variants.find((item: any) => String(item.id) === e.target.value);
+                                      setSelectedProductVariants((prev) => ({ ...prev, [prod.id]: v }));
+                                    }}
+                                    className="w-full p-1.5 rounded-lg bg-white border border-slate-200 text-[11px] text-slate-800 font-medium focus:outline-none focus:border-purple-500"
+                                  >
+                                    {prod.variants.map((v: any) => (
+                                      <option key={v.id} value={v.id}>
+                                        {v.name} • R$ {Number(v.price || prod.price).toFixed(2).replace('.', ',')} ({v.stock} un.)
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+
+                              {/* Action Buttons in 1 Click */}
+                              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200/60 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleInsertProductPitch(prod, selectedVariant, false)}
+                                  className="py-1 px-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                                  title="Inserir texto comercial no campo de digitação"
+                                >
+                                  <Edit3 className="h-3 w-3 text-blue-600" />
+                                  <span>Preencher</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleInsertProductPitch(prod, selectedVariant, true)}
+                                  className="py-1 px-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                                  title="Enviar texto comercial agora no chat"
+                                >
+                                  <Send className="h-3 w-3" />
+                                  <span>Enviar</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendProductPhoto(prod)}
+                                  className="py-1 px-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                                  title="Enviar foto oficial do produto para o cliente"
+                                >
+                                  <ImageIcon className="h-3 w-3" />
+                                  <span>Foto</span>
+                                </button>
+                              </div>
+
+                              {/* Secondary Actions: Copy Pitch or View Media Gallery */}
+                              <div className="flex items-center justify-between text-[10px] pt-0.5 px-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyProductInfo(prod, selectedVariant)}
+                                  className="text-slate-500 hover:text-slate-800 flex items-center gap-1 transition"
+                                >
+                                  {isCopied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
+                                  <span>{isCopied ? 'Copiado!' : 'Copiar dados'}</span>
+                                </button>
+
+                                {prod.media && prod.media.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveMediaGallery({ product: prod, media: prod.media })}
+                                    className="text-purple-600 hover:underline flex items-center gap-1 font-semibold"
+                                  >
+                                    <ImageIcon className="h-2.5 w-2.5" />
+                                    <span>+{prod.media.length} fotos</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -4066,6 +4469,332 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
           >
             Desmarcar
           </button>
+        </div>
+      )}
+
+      {/* Modal da Galeria de Mídias do Produto (Foto/Vídeo adicionais) */}
+      {activeMediaGallery && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-scaleIn">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <ImageIcon className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Galeria: {activeMediaGallery.product.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Clique em qualquer mídia para enviá-la instantaneamente na conversa ativa
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveMediaGallery(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {activeMediaGallery.media.map((m: any, idx: number) => {
+                  const mediaUrl = m.url || m.file_path || m;
+                  const isVideo = m.media_type === 'video' || String(mediaUrl).match(/\.(mp4|webm|mov)$/i);
+                  return (
+                    <div
+                      key={m.id || idx}
+                      className="group relative rounded-xl border border-slate-200 overflow-hidden bg-slate-100 aspect-square flex flex-col justify-end"
+                    >
+                      {isVideo ? (
+                        <video
+                          src={mediaUrl}
+                          className="w-full h-full object-cover"
+                          controls={false}
+                        />
+                      ) : (
+                        <img
+                          src={mediaUrl}
+                          alt={m.title || `Mídia ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                      )}
+
+                      {/* Overlay and send button */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                        <span className="text-[10px] font-semibold text-white bg-black/40 px-1.5 py-0.5 rounded self-start backdrop-blur-xs">
+                          {isVideo ? 'Vídeo' : 'Foto'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!activeThread) {
+                              alert('Selecione uma conversa para enviar a mídia.');
+                              return;
+                            }
+                            handleSendReply(
+                              `[${activeMediaGallery.product.name}] ${m.title || ''}`,
+                              mediaUrl
+                            );
+                            setActiveMediaGallery(null);
+                          }}
+                          className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition flex items-center justify-center gap-1.5 shadow-md"
+                        >
+                          <Send className="h-3 w-3" />
+                          <span>Enviar no Chat</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>{activeMediaGallery.media.length} itens disponíveis</span>
+              <button
+                type="button"
+                onClick={() => setActiveMediaGallery(null)}
+                className="px-4 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Catalog Drawer for Mobile / Compact Screens */}
+      {showFloatingCatalog && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex justify-end animate-fadeIn">
+          <div className="bg-white w-full max-w-md h-full shadow-2xl border-l border-slate-200 flex flex-col animate-slideLeft">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <Package className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Catálogo de Produtos</h3>
+                  <p className="text-[11px] text-slate-500">Ações rápidas de venda no chat</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFloatingCatalog(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content: Search + Category filter + Product list */}
+            <div className="p-3 border-b border-slate-100 space-y-2 bg-white">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar produto por nome, SKU, marca..."
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-purple-500 transition"
+                />
+              </div>
+
+              {/* Categories scroll */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setCatalogCategoryFilter('all')}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 transition ${
+                    catalogCategoryFilter === 'all'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Todas ({catalogProducts.length})
+                </button>
+                {catalogCategories.map((cat: any) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCatalogCategoryFilter(String(cat.id))}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 transition ${
+                      catalogCategoryFilter === String(cat.id)
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50/40">
+              {loadingCatalog ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2 text-purple-600" />
+                  Carregando catálogo...
+                </div>
+              ) : filteredChatCatalogProducts.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  Nenhum produto encontrado.
+                </div>
+              ) : (
+                filteredChatCatalogProducts.map((prod: any) => {
+                  const selectedVariant = selectedProductVariants[prod.id] || prod.variants?.[0];
+                  const hasVariants = prod.variants && prod.variants.length > 0;
+                  const activePrice = selectedVariant?.price || prod.price;
+                  const activeStock = selectedVariant?.stock !== undefined ? selectedVariant.stock : prod.stock;
+                  const hasPromo = !!prod.promotional_price && Number(prod.promotional_price) > 0;
+                  const isCopied = copiedProductId === prod.id;
+
+                  return (
+                    <div
+                      key={prod.id}
+                      className="p-2.5 rounded-xl border border-slate-200 bg-white hover:border-purple-200 hover:shadow-xs transition space-y-2"
+                    >
+                      <div className="flex gap-2.5">
+                        <div className="h-14 w-14 rounded-lg bg-slate-100 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center">
+                          {prod.image_url ? (
+                            <img src={prod.image_url} alt={prod.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <Package className="h-6 w-6 text-slate-300" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {prod.sku && (
+                              <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-200 text-slate-700">
+                                {prod.sku}
+                              </span>
+                            )}
+                            {prod.brand && (
+                              <span className="text-[10px] text-slate-500 truncate font-medium">
+                                {prod.brand}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-900 line-clamp-1 leading-snug">
+                            {prod.name}
+                          </h4>
+                          <div className="flex items-baseline gap-1.5 mt-0.5">
+                            {hasPromo ? (
+                              <>
+                                <span className="text-xs font-bold text-emerald-600">
+                                  R$ {Number(prod.promotional_price).toFixed(2).replace('.', ',')}
+                                </span>
+                                <span className="text-[10px] text-slate-400 line-through">
+                                  R$ {Number(prod.price).toFixed(2).replace('.', ',')}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-bold text-slate-900">
+                                R$ {Number(activePrice).toFixed(2).replace('.', ',')}
+                              </span>
+                            )}
+                            <span className={`text-[9px] font-semibold px-1 py-0.2 rounded ml-auto ${
+                              activeStock > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {activeStock > 0 ? `${activeStock} un.` : 'Esgotado'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {hasVariants && (
+                        <div className="pt-0.5">
+                          <select
+                            value={selectedVariant?.id || ''}
+                            onChange={(e) => {
+                              const v = prod.variants.find((item: any) => String(item.id) === e.target.value);
+                              setSelectedProductVariants((prev) => ({ ...prev, [prod.id]: v }));
+                            }}
+                            className="w-full p-1.5 rounded-lg bg-white border border-slate-200 text-[11px] text-slate-800 font-medium focus:outline-none focus:border-purple-500"
+                          >
+                            {prod.variants.map((v: any) => (
+                              <option key={v.id} value={v.id}>
+                                {v.name} • R$ {Number(v.price || prod.price).toFixed(2).replace('.', ',')} ({v.stock} un.)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleInsertProductPitch(prod, selectedVariant, false);
+                            setShowFloatingCatalog(false);
+                          }}
+                          className="py-1 px-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                        >
+                          <Edit3 className="h-3 w-3 text-blue-600" />
+                          <span>Preencher</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleInsertProductPitch(prod, selectedVariant, true);
+                            setShowFloatingCatalog(false);
+                          }}
+                          className="py-1 px-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                        >
+                          <Send className="h-3 w-3" />
+                          <span>Enviar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSendProductPhoto(prod);
+                            setShowFloatingCatalog(false);
+                          }}
+                          className="py-1 px-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs"
+                        >
+                          <ImageIcon className="h-3 w-3" />
+                          <span>Foto</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] pt-0.5 px-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyProductInfo(prod, selectedVariant)}
+                          className="text-slate-500 hover:text-slate-800 flex items-center gap-1 transition"
+                        >
+                          {isCopied ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
+                          <span>{isCopied ? 'Copiado!' : 'Copiar dados'}</span>
+                        </button>
+
+                        {prod.media && prod.media.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMediaGallery({ product: prod, media: prod.media });
+                              setShowFloatingCatalog(false);
+                            }}
+                            className="text-purple-600 hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            <ImageIcon className="h-2.5 w-2.5" />
+                            <span>+{prod.media.length} fotos</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

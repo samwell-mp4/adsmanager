@@ -365,8 +365,24 @@ export class CatalogRepository {
   async createProduct(data: CreateProductInput): Promise<CatalogProduct> {
     await this.ensureCatalogTablesExist();
     const client = await pool.connect();
+    let released = false;
     try {
       await client.query('BEGIN');
+
+      // Check category_id validity to avoid foreign key violation
+      let categoryId = data.category_id ? Number(data.category_id) : null;
+      if (categoryId) {
+        const catCheck = await client.query('SELECT id FROM catalog_categories WHERE id = $1', [categoryId]);
+        if (catCheck.rows.length === 0) {
+          categoryId = null;
+        }
+      }
+
+      const sku = data.sku?.trim() || `PRD-${Date.now().toString().slice(-6)}`;
+      const price = Number(data.price) || 0;
+      const promotionalPrice = data.promotional_price !== undefined && data.promotional_price !== null ? Number(data.promotional_price) : null;
+      const costPrice = data.cost_price !== undefined && data.cost_price !== null ? Number(data.cost_price) : null;
+      const stock = Number(data.stock) || 0;
 
       const prodRes = await client.query(`
         INSERT INTO catalog_products (
@@ -375,15 +391,15 @@ export class CatalogRepository {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
       `, [
-        data.sku?.trim() || `PRD-${Date.now()}`,
+        sku,
         data.name.trim(),
         data.description || null,
-        data.category_id || null,
+        categoryId,
         data.brand?.trim() || null,
-        data.price || 0,
-        data.promotional_price || null,
-        data.cost_price || null,
-        data.stock || 0,
+        price,
+        promotionalPrice,
+        costPrice,
+        stock,
         data.main_image || null,
         data.is_active !== undefined ? data.is_active : true,
         data.notes || null
@@ -403,8 +419,8 @@ export class CatalogRepository {
             v.sku?.trim() || null,
             v.name.trim(),
             v.variant_type || 'volume',
-            v.price || data.price || null,
-            v.stock || 0
+            v.price !== undefined && v.price !== null ? Number(v.price) : price,
+            Number(v.stock) || 0
           ]);
         }
       }
@@ -428,19 +444,27 @@ export class CatalogRepository {
       }
 
       await client.query('COMMIT');
+      client.release();
+      released = true;
+
       const created = await this.getProductById(productId);
       return created!;
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (!released) {
+        try { await client.query('ROLLBACK'); } catch {}
+      }
       throw err;
     } finally {
-      client.release();
+      if (!released) {
+        try { client.release(); } catch {}
+      }
     }
   }
 
   async updateProduct(id: number, data: CreateProductInput): Promise<CatalogProduct | null> {
     await this.ensureCatalogTablesExist();
     const client = await pool.connect();
+    let released = false;
     try {
       await client.query('BEGIN');
 
@@ -515,12 +539,19 @@ export class CatalogRepository {
       }
 
       await client.query('COMMIT');
+      client.release();
+      released = true;
+
       return await this.getProductById(id);
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (!released) {
+        try { await client.query('ROLLBACK'); } catch {}
+      }
       throw err;
     } finally {
-      client.release();
+      if (!released) {
+        try { client.release(); } catch {}
+      }
     }
   }
 
