@@ -5,6 +5,7 @@ import {
   getConversationDetailsHandler,
   sendReplyHandler,
   updateLeadStatusHandler,
+  deleteConversationHandler,
   getPendingRepliesHandler,
   markOutgoingSentHandler,
   downloadExtensionHandler,
@@ -28,6 +29,7 @@ export async function crmRoutes(fastify: FastifyInstance) {
   fastify.get('/api/crm/conversations/:id', getConversationDetailsHandler);
   fastify.post('/api/crm/conversations/:id/reply', sendReplyHandler);
   fastify.patch('/api/crm/conversations/:id/status', updateLeadStatusHandler);
+  fastify.delete('/api/crm/conversations/:id', deleteConversationHandler);
 
   // Outgoing queue polling for extension
   fastify.get('/api/crm/outgoing', getPendingRepliesHandler);

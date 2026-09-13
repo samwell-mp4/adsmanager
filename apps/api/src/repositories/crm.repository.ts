@@ -200,6 +200,7 @@ export class CrmRepository {
     platform?: CrmPlatform;
     lead_status?: LeadStatus;
     search?: string;
+    marketplace_only?: boolean;
     limit?: number;
     offset?: number;
   }): Promise<CrmConversation[]> {
@@ -227,6 +228,10 @@ export class CrmRepository {
       if (filter.lead_status) {
         params.push(filter.lead_status);
         query += ` AND c.lead_status = $${params.length}`;
+      }
+
+      if (filter.marketplace_only) {
+        query += ` AND (c.product_title IS NOT NULL OR c.product_price IS NOT NULL OR c.product_url IS NOT NULL OR c.platform = 'olx')`;
       }
 
       if (filter.search) {
@@ -404,6 +409,19 @@ export class CrmRepository {
         `UPDATE crm_outgoing_queue SET status = 'failed', error_message = $2, attempts = attempts + 1 WHERE id = $1;`,
         [id, error]
       );
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Deletes a conversation and all cascaded messages
+   */
+  async deleteConversation(id: number): Promise<boolean> {
+    const client = await pool.connect();
+    try {
+      const res = await client.query(`DELETE FROM crm_conversations WHERE id = $1 RETURNING id;`, [id]);
+      return (res.rowCount || 0) > 0;
     } finally {
       client.release();
     }

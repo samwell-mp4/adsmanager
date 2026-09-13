@@ -848,6 +848,29 @@ function scrapeFacebook() {
       conversations.push(activeConv);
     }
 
+    // Extrair produto e nome do cliente do cabeçalho da conversa aberta se ainda não tiver
+    try {
+      const mainHeader = document.querySelector('div[role="main"] h2, div[role="main"] h1, [data-pagelet="MWThreadHeaderContent"]');
+      if (mainHeader) {
+        const headerText = mainHeader.textContent.trim();
+        if (headerText.includes(' · ')) {
+          const parts = headerText.split(' · ');
+          if (activeConv.customer_name === 'Cliente Atual' || activeConv.customer_name === 'Cliente Facebook') {
+            activeConv.customer_name = parts[0].trim();
+          }
+          if (!activeConv.product_title) {
+            activeConv.product_title = parts.slice(1).join(' · ').trim();
+          }
+        }
+      }
+
+      const allText = document.querySelector('div[role="main"]')?.textContent || '';
+      const priceMatch = allText.match(/R\\$\\s?[\\d.,]+/);
+      if (priceMatch && !activeConv.product_price) {
+        activeConv.product_price = priceMatch[0];
+      }
+    } catch (e) {}
+
     const messageBubbles = Array.from(document.querySelectorAll('div[dir="auto"], [role="row"] div[dir="auto"]'))
       .filter(el => {
         const t = el.textContent.trim();

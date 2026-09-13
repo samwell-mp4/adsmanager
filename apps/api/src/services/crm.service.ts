@@ -140,6 +140,7 @@ export class CrmService {
     platform?: CrmPlatform;
     lead_status?: LeadStatus;
     search?: string;
+    marketplace_only?: boolean;
     limit?: number;
     offset?: number;
   }) {
@@ -269,6 +270,13 @@ export class CrmService {
    */
   async markReplySent(outgoingId: number) {
     return crmRepository.markReplySent(outgoingId);
+  }
+
+  /**
+   * Deletes a conversation and its messages
+   */
+  async deleteConversation(id: number) {
+    return crmRepository.deleteConversation(id);
   }
 }
 

@@ -261,12 +261,14 @@ export const api = {
     platform?: string;
     lead_status?: string;
     search?: string;
+    marketplace_only?: boolean;
   }): Promise<any[]> {
     const query = new URLSearchParams();
     if (params?.profile_id) query.append('profile_id', String(params.profile_id));
     if (params?.platform) query.append('platform', params.platform);
     if (params?.lead_status) query.append('lead_status', params.lead_status);
     if (params?.search) query.append('search', params.search);
+    if (params?.marketplace_only) query.append('marketplace_only', 'true');
 
     const res = await fetch(`${API_BASE}/crm/conversations?${query.toString()}`);
     const data = await handleResponse<any>(res);
@@ -296,6 +298,13 @@ export const api = {
     });
     const data = await handleResponse<any>(res);
     return data?.data !== undefined ? data.data : data;
+  },
+
+  async deleteCrmConversation(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/crm/conversations/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
   },
 
   async initCrmTables(): Promise<{ success: boolean; message: string }> {

@@ -24,6 +24,7 @@ export async function listConversationsHandler(
       platform?: CrmPlatform;
       lead_status?: LeadStatus;
       search?: string;
+      marketplace_only?: string;
       limit?: string;
       offset?: string;
     };
@@ -36,6 +37,7 @@ export async function listConversationsHandler(
       platform: req.query.platform,
       lead_status: req.query.lead_status,
       search: req.query.search,
+      marketplace_only: req.query.marketplace_only === 'true' || req.query.marketplace_only === '1',
       limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
       offset: req.query.offset ? parseInt(req.query.offset, 10) : 0,
     };
@@ -86,6 +88,22 @@ export async function updateLeadStatusHandler(
     const id = parseInt(req.params.id, 10);
     const updated = await crmService.updateStatus(id, req.body.lead_status, req.body.notes);
     return reply.send({ success: true, data: updated });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function deleteConversationHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const deleted = await crmService.deleteConversation(id);
+    if (!deleted) {
+      return reply.status(404).send({ success: false, error: 'Conversa não encontrada' });
+    }
+    return reply.send({ success: true, message: 'Conversa excluída com sucesso' });
   } catch (err: any) {
     return reply.status(500).send({ success: false, error: err.message });
   }
