@@ -1097,69 +1097,175 @@ function scrapeOlx() {
   return conversations;
 }
 
-// 4. Parser do Instagram Direct (instagram.com/direct/inbox/ e /direct/t/*)
+// 4. Parser Robusto do Instagram Direct (instagram.com/direct/inbox/ e /direct/t/*)
 function scrapeInstagram() {
   const conversations = [];
   const seenIds = new Set();
-  const threadLinks = Array.from(document.querySelectorAll('a[href*="/direct/t/"]'));
+  const seenNames = new Set();
 
-  for (let i = 0; i < threadLinks.length; i++) {
-    const link = threadLinks[i];
+  const candidateRows = [];
+
+  const links = Array.from(document.querySelectorAll('a[href*="/direct/t/"], a[href*="/direct/inbox/"]'));
+  for (const a of links) {
+    if (a.querySelector('svg[aria-label*="Direct"], svg[aria-label*="Mensagens"], svg[aria-label*="Messages"]')) continue;
+    const href = a.getAttribute('href') || '';
+    if (href === '/direct/inbox/' || href === '/direct/inbox') continue;
+    candidateRows.push(a);
+  }
+
+  const allImages = Array.from(document.querySelectorAll('img')).filter(img => {
     try {
-      const href = link.getAttribute('href') || '';
-      const match = href.match(/\\/direct\\/t\\/([^/?#]+)/);
-      if (!match) continue;
+      const rect = img.getBoundingClientRect();
+      if (rect.left >= 35 && rect.left <= 450 && rect.top >= 90 && rect.width >= 30 && rect.width <= 80) {
+        const parentNote = img.closest('[aria-label*="note" i], [aria-label*="nota" i], [aria-label*="story" i], [aria-label*="stories" i]');
+        if (parentNote) return false;
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  });
 
-      const threadId = match[1];
-      if (seenIds.has(threadId)) continue;
-      seenIds.add(threadId);
+  for (const img of allImages) {
+    const row = img.closest('div[role="button"], div[role="listitem"], div[role="row"], div[role="link"], a, div[tabindex="0"], div.x1n2onr6') || img.parentElement?.parentElement?.parentElement;
+    if (row && !candidateRows.includes(row)) {
+      const text = row.textContent || '';
+      if (!text.includes("Your note") && !text.includes("Sua nota") && !text.includes("What's new")) {
+        candidateRows.push(row);
+      }
+    }
+  }
 
-      let customerName = 'Usuário Instagram';
-      const spans = Array.from(link.querySelectorAll('span')).map(s => s.textContent.trim()).filter(Boolean);
-      if (spans.length > 0) {
-        const nameCandidate = spans.find(s => !s.match(/^\\d+\\s*(m|h|d|sem|s)$/i) && !s.toLowerCase().includes('ativo'));
-        if (nameCandidate) customerName = nameCandidate;
+  if (candidateRows.length === 0) {
+    const listItems = Array.from(document.querySelectorAll('div[role="listitem"], div[role="button"][tabindex="0"]'));
+    for (const item of listItems) {
+      const rect = item.getBoundingClientRect();
+      if (rect.left >= 35 && rect.left <= 450 && rect.top >= 90 && rect.height >= 40 && rect.height <= 130) {
+        if (item.querySelector('img')) {
+          candidateRows.push(item);
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < candidateRows.length; i++) {
+    const row = candidateRows[i];
+    try {
+      let threadId = null;
+      let href = '';
+      const linkEl = row.tagName === 'A' ? row : row.querySelector('a');
+      if (linkEl) {
+        href = linkEl.getAttribute('href') || '';
+        const match = href.match(/\/direct\/t\/([^/?#]+)/) || href.match(/thread_key=([^&]+)/);
+        if (match) {
+          threadId = match[1];
+        }
       }
 
-      const img = link.querySelector('img');
+      const img = row.querySelector('img');
       const customerAvatar = img ? img.src : null;
+
+      let customerName = '';
+
+      if (img && img.alt) {
+        const cleanAlt = img.alt.replace(/^(?:Foto do perfil de|Foto de perfil de|Profile picture of|Foto de)\s*/i, '').trim();
+        if (cleanAlt && cleanAlt.length >= 2 && !cleanAlt.toLowerCase().includes('história') && !cleanAlt.toLowerCase().includes('story')) {
+          customerName = cleanAlt;
+        }
+      }
+
+      const spans = Array.from(row.querySelectorAll('span, div[dir="auto"], p'))
+        .map(s => s.textContent.trim())
+        .filter(s => s.length > 0);
+
+      if (!customerName && spans.length > 0) {
+        for (const s of spans) {
+          const lower = s.toLowerCase();
+          if (
+            lower.includes('ativo') ||
+            lower.includes('active') ||
+            lower === 'enviar' ||
+            lower === 'send' ||
+            lower === 'primary' ||
+            lower === 'general' ||
+            lower === 'requests' ||
+            s.match(/^(?:\d+\s*(?:s|seg|min|m|h|d|sem|w)\b|ontem|yesterday)$/i)
+          ) {
+            continue;
+          }
+          customerName = s;
+          break;
+        }
+      }
+
+      if (!customerName || customerName.length < 2) {
+        customerName = 'Usuário Instagram ' + (i + 1);
+      }
+
+      if (!threadId) {
+        const norm = customerName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        threadId = 'ig_' + norm;
+      }
+
+      if (seenIds.has(threadId) || seenNames.has(customerName.toLowerCase())) {
+        continue;
+      }
+      seenIds.add(threadId);
+      seenNames.add(customerName.toLowerCase());
 
       let lastMessage = '';
       let rawTimeStr = '';
 
       for (const text of spans) {
-        if (text.match(/(?:·|-|\\s|^)(\\d+)\\s*(s|seg|min|m|h|hora|horas|d|dia|dias|sem|semana|semanas|mês|mes|meses|a|ano|anos)(?:\\b|$)/i)) {
+        if (text === customerName) continue;
+        const lower = text.toLowerCase();
+        if (lower.includes('ativo') || lower.includes('active')) continue;
+
+        if (text.includes(' · ') || text.includes(' • ')) {
+          const parts = text.split(/\s*[·•]\s*/);
+          if (parts.length >= 2) {
+            lastMessage = parts[0].trim();
+            rawTimeStr = parts[1].trim();
+          } else {
+            lastMessage = text;
+          }
+        } else if (text.match(/(?:·|-|\s|^)(\d+)\s*(s|seg|min|m|h|hora|horas|d|dia|dias|sem|w|semana|semanas|mês|mes|meses|a|ano|anos)(?:\b|$)/i)) {
           rawTimeStr = text;
-        } else if (text !== customerName && text.length > 1 && !text.toLowerCase().includes('ativo')) {
+        } else if (!lastMessage && text.length > 1) {
           lastMessage = text;
         }
       }
 
+      const calculatedTime = parseFacebookRelativeTime(rawTimeStr, i);
+
       const isUnread = Boolean(
-        link.querySelector('[aria-label*="não lida"], [aria-label*="unread"]') ||
-        link.innerHTML.includes('background-color: rgb(0, 149, 246)') ||
-        link.innerHTML.includes('rgb(0, 149, 246)')
+        row.querySelector('[aria-label*="não lida" i], [aria-label*="unread" i]') ||
+        row.innerHTML.includes('background-color: rgb(0, 149, 246)') ||
+        row.innerHTML.includes('rgb(0, 149, 246)') ||
+        row.innerHTML.includes('#0095f6') ||
+        row.querySelector('div[style*="rgb(0, 149, 246)"], span[style*="rgb(0, 149, 246)"]')
       );
 
       conversations.push({
         external_id: threadId,
         customer_name: customerName,
         customer_avatar: customerAvatar,
-        last_message: lastMessage,
-        last_message_at: new Date().toISOString(),
+        last_message: lastMessage || 'Conversa iniciada',
+        last_message_at: calculatedTime,
         unread: isUnread,
         messages: []
       });
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[CRM Content] Erro ao analisar item do Instagram:', e);
+    }
   }
 
   const currentUrl = location.href;
-  const matchCurrent = currentUrl.match(/\\/direct\\/t\\/([^/?#]+)/);
+  const matchCurrent = currentUrl.match(/\/direct\/t\/([^/?#]+)/);
   const activeThreadId = matchCurrent ? matchCurrent[1] : null;
 
   if (activeThreadId) {
     let activeConv = conversations.find(c => c.external_id === activeThreadId);
-    const headerTitleEl = document.querySelector('div[role="main"] h2, div[role="main"] h1, div[role="main"] header span');
+    const headerTitleEl = document.querySelector('div[role="main"] h2, div[role="main"] h1, div[role="main"] header span, div[role="main"] h4');
     const headerName = headerTitleEl ? headerTitleEl.textContent.trim() : null;
 
     if (!activeConv) {
@@ -1171,8 +1277,8 @@ function scrapeInstagram() {
         last_message_at: new Date().toISOString(),
         messages: []
       };
-      conversations.push(activeConv);
-    } else if (headerName && activeConv.customer_name === 'Usuário Instagram') {
+      conversations.unshift(activeConv);
+    } else if (headerName && activeConv.customer_name.startsWith('Usuário Instagram')) {
       activeConv.customer_name = headerName;
     }
 
@@ -1198,7 +1304,7 @@ function scrapeInstagram() {
 
         let isMe = false;
         const rect = el.getBoundingClientRect();
-        if (rect.right > window.innerWidth * 0.58) {
+        if (rect.right > window.innerWidth * 0.55) {
           isMe = true;
         }
 
@@ -1209,7 +1315,7 @@ function scrapeInstagram() {
         });
       }
 
-      activeConv.messages = parsedMessages.slice(-30);
+      activeConv.messages = parsedMessages.slice(-40);
       if (activeConv.messages.length > 0 && !activeConv.last_message) {
         activeConv.last_message = activeConv.messages[activeConv.messages.length - 1].content;
       }
