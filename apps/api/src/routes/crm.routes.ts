@@ -17,11 +17,17 @@ import {
   bulkDeleteHandler,
   syncExtensionsHandler,
   openTabHandler,
+  saveInsightsHandler,
+  getInsightsHandler,
 } from '../controllers/crm.controller.js';
 
 export async function crmRoutes(fastify: FastifyInstance) {
   // Webhook for browser extension
   fastify.post('/api/crm/webhook', webhookHandler);
+
+  // Instagram Insights endpoints
+  fastify.post('/api/crm/insights', saveInsightsHandler);
+  fastify.get('/api/crm/insights', getInsightsHandler);
 
   // Trigger test forward to n8n webhook
   fastify.post('/api/crm/test-webhook', testWebhookForwardHandler);

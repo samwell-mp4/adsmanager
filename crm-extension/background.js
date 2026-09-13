@@ -117,6 +117,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     return true; // Keep async response channel open
   }
+
+  if (message && message.type === 'CRM_SYNC_INSIGHTS') {
+    const payload = {
+      profile_id: currentProfileId,
+      profile_uuid: currentProfileUuid,
+      ...message.insights,
+      captured_at: new Date().toISOString()
+    };
+    console.log('[CRM Background] Dispatching scraped Instagram Insights to API...', payload);
+    const url = currentApiUrl + '/api/crm/insights';
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json()).then(d => {
+      sendResponse({ success: true, data: d });
+    }).catch(e => {
+      sendResponse({ success: false, error: e.message });
+    });
+    return true;
+  }
 });
 
 // Poll outgoing replies queue from dashboard

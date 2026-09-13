@@ -192,3 +192,34 @@ export interface CrmWebhookPayload {
     }>;
   }>;
 }
+
+export interface CrmInsightData {
+  id?: number;
+  profile_id?: number;
+  platform?: string;
+  timeframe?: number;
+  views: number;
+  viewers: number;
+  followers_views_pct: number;
+  non_followers_views_pct: number;
+  stories_views_pct: number;
+  posts_views_pct: number;
+  reels_views_pct: number;
+  interactions: number;
+  followers_interactions_pct: number;
+  non_followers_interactions_pct: number;
+  accounts_engaged: number;
+  stories_interactions_pct: number;
+  posts_interactions_pct: number;
+  reels_interactions_pct: number;
+  profile_activity: number;
+  profile_visits: number;
+  external_link_taps: number;
+  total_followers: number;
+  active_times?: Array<{ hour: string; count: number }>;
+  top_content_views?: Array<{ views: number; date: string }>;
+  top_content_interactions?: Array<{ interactions: number; date: string }>;
+  raw_data?: any;
+  synced_at?: Date | string;
+  created_at?: Date | string;
+}

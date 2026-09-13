@@ -374,6 +374,13 @@ export const api = {
     });
     return handleResponse<{ success: boolean; container?: string; url: string }>(res);
   },
+
+  async getCrmInsights(timeframe: number = 30, profileId?: number): Promise<{ success: boolean; data: any }> {
+    let url = `${API_BASE}/crm/insights?timeframe=${timeframe}`;
+    if (profileId) url += `&profile_id=${profileId}`;
+    const res = await fetch(url);
+    return handleResponse<{ success: boolean; data: any }>(res);
+  },
 };
 
 

@@ -1,5 +1,5 @@
 import { pool } from '../db/index.js';
-import { CrmConversation, CrmMessage, CrmOutgoingMessage, LeadStatus, CrmPlatform } from '../types/index.js';
+import { CrmConversation, CrmMessage, CrmOutgoingMessage, LeadStatus, CrmPlatform, CrmInsightData } from '../types/index.js';
 
 let tablesInitialized = false;
 
@@ -64,13 +64,45 @@ export class CrmRepository {
         CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_conv_plat_ext_prof
         ON crm_conversations (platform, external_id, profile_id);
 
-        -- Tabela de leads/conversas excluídos pelo usuário (blacklist para não ressuscitar)
+        -- Tabela de Blacklist para conversas excluídas pelo usuário
         CREATE TABLE IF NOT EXISTS crm_deleted_conversations (
             id SERIAL PRIMARY KEY,
             platform VARCHAR(50) NOT NULL,
             external_id VARCHAR(255) NOT NULL,
             deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE(platform, external_id)
+            UNIQUE (platform, external_id)
+        );
+
+        -- Tabela de Insights e Métricas Oficiais (Instagram / Meta)
+        CREATE TABLE IF NOT EXISTS crm_insights (
+            id SERIAL PRIMARY KEY,
+            profile_id INTEGER DEFAULT 0,
+            platform VARCHAR(50) DEFAULT 'instagram',
+            timeframe INTEGER DEFAULT 30,
+            views INTEGER DEFAULT 0,
+            viewers INTEGER DEFAULT 0,
+            followers_views_pct NUMERIC(5, 2) DEFAULT 0,
+            non_followers_views_pct NUMERIC(5, 2) DEFAULT 0,
+            stories_views_pct NUMERIC(5, 2) DEFAULT 0,
+            posts_views_pct NUMERIC(5, 2) DEFAULT 0,
+            reels_views_pct NUMERIC(5, 2) DEFAULT 0,
+            interactions INTEGER DEFAULT 0,
+            followers_interactions_pct NUMERIC(5, 2) DEFAULT 0,
+            non_followers_interactions_pct NUMERIC(5, 2) DEFAULT 0,
+            accounts_engaged INTEGER DEFAULT 0,
+            stories_interactions_pct NUMERIC(5, 2) DEFAULT 0,
+            posts_interactions_pct NUMERIC(5, 2) DEFAULT 0,
+            reels_interactions_pct NUMERIC(5, 2) DEFAULT 0,
+            profile_activity INTEGER DEFAULT 0,
+            profile_visits INTEGER DEFAULT 0,
+            external_link_taps INTEGER DEFAULT 0,
+            total_followers INTEGER DEFAULT 0,
+            active_times JSONB DEFAULT '[]'::jsonb,
+            top_content_views JSONB DEFAULT '[]'::jsonb,
+            top_content_interactions JSONB DEFAULT '[]'::jsonb,
+            raw_data JSONB DEFAULT '{}'::jsonb,
+            synced_at TIMESTAMPTZ DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
         -- Campos adicionais para negociação e agilidade
@@ -84,20 +116,94 @@ export class CrmRepository {
         CREATE INDEX IF NOT EXISTS idx_crm_conv_updated ON crm_conversations(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_crm_msg_conv ON crm_messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_crm_queue_status ON crm_outgoing_queue(status, profile_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_insights_prof_tf ON crm_insights(platform, profile_id, timeframe);
       `);
 
       // Migração e Limpeza de Clientes Duplicados:
       // 1. Remover índice antigo que permitia duplicação com profile_id diferente
       await client.query(`DROP INDEX IF EXISTS uq_crm_conv_plat_ext_prof;`);
 
-      // 2. Limpar mensagens de sistema/lixo do Facebook
+      // 2. Limpar mensagens de sistema/lixo do Facebook e falsos contatos do Instagram
       await client.query(`
+        DELETE FROM crm_messages WHERE conversation_id IN (
+          SELECT id FROM crm_conversations
+          WHERE customer_name ILIKE '%snackstorebh%'
+             OR customer_name ILIKE '%professional dashboard%'
+             OR customer_name ILIKE '%painel profissional%'
+             OR customer_name ILIKE '%meta ai%'
+             OR external_id ILIKE '%snackstorebh%'
+             OR external_id ILIKE '%professional_dashboard%'
+        );
+        DELETE FROM crm_outgoing_queue WHERE conversation_id IN (
+          SELECT id FROM crm_conversations
+          WHERE customer_name ILIKE '%snackstorebh%'
+             OR customer_name ILIKE '%professional dashboard%'
+             OR customer_name ILIKE '%painel profissional%'
+             OR customer_name ILIKE '%meta ai%'
+             OR external_id ILIKE '%snackstorebh%'
+             OR external_id ILIKE '%professional_dashboard%'
+        );
         DELETE FROM crm_conversations 
-        WHERE customer_name ILIKE '%Parece que publicaste este anúncio%'
+        WHERE customer_name ILIKE '%snackstorebh%'
+           OR customer_name ILIKE '%professional dashboard%'
+           OR customer_name ILIKE '%painel profissional%'
+           OR customer_name ILIKE '%meta ai%'
+           OR external_id ILIKE '%snackstorebh%'
+           OR external_id ILIKE '%professional_dashboard%'
+           OR customer_name ILIKE '%Parece que publicaste este anúncio%'
            OR customer_name ILIKE '%Pedido de mensagem%'
            OR customer_name ILIKE '%Ativo agora%'
            OR customer_name = 'Cliente Atual';
       `);
+
+      // Inserir dados reais de Insights como baseline inicial se a tabela estiver vazia
+      const insightCount = await client.query(`SELECT COUNT(*) FROM crm_insights WHERE platform = 'instagram'`);
+      if (parseInt(insightCount.rows[0].count, 10) === 0) {
+        await client.query(`
+          INSERT INTO crm_insights (
+            profile_id, platform, timeframe,
+            views, viewers, followers_views_pct, non_followers_views_pct,
+            stories_views_pct, posts_views_pct, reels_views_pct,
+            interactions, followers_interactions_pct, non_followers_interactions_pct,
+            accounts_engaged, stories_interactions_pct, posts_interactions_pct, reels_interactions_pct,
+            profile_activity, profile_visits, external_link_taps, total_followers,
+            active_times, top_content_views, top_content_interactions, synced_at
+          ) VALUES (
+            0, 'instagram', 30,
+            8485, 3219, 22.2, 77.8,
+            67.1, 22.9, 10.0,
+            138, 61.6, 38.4,
+            55, 47.4, 40.8, 11.8,
+            339, 270, 69, 1163,
+            $1::jsonb, $2::jsonb, $3::jsonb, NOW()
+          );
+        `, [
+          JSON.stringify([
+            { hour: '12a', count: 129 },
+            { hour: '3a', count: 343 },
+            { hour: '6a', count: 423 },
+            { hour: '9a', count: 426 },
+            { hour: '12p', count: 442 },
+            { hour: '3p', count: 462 },
+            { hour: '6p', count: 288 },
+            { hour: '9p', count: 72 }
+          ]),
+          JSON.stringify([
+            { views: 116, date: 'Sep 8' },
+            { views: 103, date: 'Aug 25' },
+            { views: 92, date: 'Aug 15' },
+            { views: 76, date: 'Aug 24' },
+            { views: 74, date: 'Aug 15' }
+          ]),
+          JSON.stringify([
+            { interactions: 7, date: 'Aug 25' },
+            { interactions: 4, date: 'Aug 24' },
+            { interactions: 3, date: 'Sep 3' },
+            { interactions: 3, date: 'Sep 3' },
+            { interactions: 3, date: 'Aug 28' }
+          ])
+        ]);
+      }
 
       // 3. Mesclar e unificar conversas duplicadas por (platform, external_id)
       const extDups = await client.query(`
@@ -678,6 +784,105 @@ export class CrmRepository {
 
       const res = await client.query(`DELETE FROM crm_conversations WHERE id = ANY($1::int[]);`, [ids]);
       return res.rowCount || 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Salva dados de insights raspados da página do Instagram
+   */
+  async saveInsights(data: CrmInsightData): Promise<CrmInsightData> {
+    const client = await pool.connect();
+    try {
+      const query = `
+        INSERT INTO crm_insights (
+          profile_id, platform, timeframe,
+          views, viewers, followers_views_pct, non_followers_views_pct,
+          stories_views_pct, posts_views_pct, reels_views_pct,
+          interactions, followers_interactions_pct, non_followers_interactions_pct,
+          accounts_engaged, stories_interactions_pct, posts_interactions_pct, reels_interactions_pct,
+          profile_activity, profile_visits, external_link_taps, total_followers,
+          active_times, top_content_views, top_content_interactions, raw_data, synced_at
+        ) VALUES (
+          COALESCE($1, 0), COALESCE($2, 'instagram'), COALESCE($3, 30),
+          $4, $5, $6, $7,
+          $8, $9, $10,
+          $11, $12, $13,
+          $14, $15, $16, $17,
+          $18, $19, $20, $21,
+          $22::jsonb, $23::jsonb, $24::jsonb, $25::jsonb, NOW()
+        )
+        RETURNING *;
+      `;
+      const values = [
+        data.profile_id || 0,
+        data.platform || 'instagram',
+        data.timeframe || 30,
+        data.views || 0,
+        data.viewers || 0,
+        data.followers_views_pct || 0,
+        data.non_followers_views_pct || 0,
+        data.stories_views_pct || 0,
+        data.posts_views_pct || 0,
+        data.reels_views_pct || 0,
+        data.interactions || 0,
+        data.followers_interactions_pct || 0,
+        data.non_followers_interactions_pct || 0,
+        data.accounts_engaged || 0,
+        data.stories_interactions_pct || 0,
+        data.posts_interactions_pct || 0,
+        data.reels_interactions_pct || 0,
+        data.profile_activity || 0,
+        data.profile_visits || 0,
+        data.external_link_taps || 0,
+        data.total_followers || 0,
+        JSON.stringify(data.active_times || []),
+        JSON.stringify(data.top_content_views || []),
+        JSON.stringify(data.top_content_interactions || []),
+        JSON.stringify(data.raw_data || {}),
+      ];
+
+      const res = await client.query(query, values);
+      return res.rows[0];
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Obtém os insights mais recentes do Instagram / Meta
+   */
+  async getLatestInsights(profileId?: number, timeframe: number = 30): Promise<CrmInsightData | null> {
+    const client = await pool.connect();
+    try {
+      let query = `
+        SELECT * FROM crm_insights
+        WHERE platform = 'instagram'
+      `;
+      const params: any[] = [];
+      if (timeframe) {
+        params.push(timeframe);
+        query += ` AND timeframe = $${params.length}`;
+      }
+      if (profileId !== undefined && profileId > 0) {
+        params.push(profileId);
+        query += ` AND (profile_id = $${params.length} OR profile_id = 0)`;
+      }
+      query += ` ORDER BY (profile_id > 0) DESC, synced_at DESC, id DESC LIMIT 1;`;
+
+      const res = await client.query(query, params);
+      if (res.rows.length > 0) {
+        return res.rows[0];
+      }
+
+      // Fallback global
+      const fallback = await client.query(`
+        SELECT * FROM crm_insights
+        WHERE platform = 'instagram'
+        ORDER BY synced_at DESC, id DESC LIMIT 1;
+      `);
+      return fallback.rows[0] || null;
     } finally {
       client.release();
     }

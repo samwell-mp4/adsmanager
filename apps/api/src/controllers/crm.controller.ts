@@ -335,5 +335,35 @@ export async function openTabHandler(
   }
 }
 
+export async function saveInsightsHandler(
+  req: FastifyRequest<{ Body: any }>,
+  reply: FastifyReply
+) {
+  try {
+    const payload = req.body;
+    if (!payload) {
+      return reply.status(400).send({ success: false, error: 'Dados ausentes' });
+    }
+    const saved = await crmService.saveInsights(payload as any);
+    return reply.send({ success: true, data: saved });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
+export async function getInsightsHandler(
+  req: FastifyRequest<{ Querystring: { profile_id?: string; timeframe?: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const profileId = req.query.profile_id ? parseInt(req.query.profile_id, 10) : undefined;
+    const timeframe = req.query.timeframe ? parseInt(req.query.timeframe, 10) : 30;
+    const insights = await crmService.getLatestInsights(profileId, timeframe);
+    return reply.send({ success: true, data: insights });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, error: err.message });
+  }
+}
+
 
 

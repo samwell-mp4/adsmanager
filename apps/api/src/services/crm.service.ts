@@ -1,7 +1,7 @@
 import { crmRepository } from '../repositories/crm.repository.js';
 import { profileRepository } from '../repositories/profile.repository.js';
 import { dockerManager } from '../managers/docker.manager.js';
-import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
+import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform, CrmInsightData } from '../types/index.js';
 import { evolutionService } from './evolution.service.js';
 
 export const DEFAULT_N8N_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager';
@@ -373,6 +373,20 @@ export class CrmService {
    */
   async bulkDelete(ids: number[]) {
     return crmRepository.bulkDeleteConversations(ids);
+  }
+
+  /**
+   * Saves parsed insights from Instagram
+   */
+  async saveInsights(data: CrmInsightData) {
+    return crmRepository.saveInsights(data);
+  }
+
+  /**
+   * Gets latest insights for a profile and timeframe
+   */
+  async getLatestInsights(profileId?: number, timeframe: number = 30) {
+    return crmRepository.getLatestInsights(profileId, timeframe);
   }
 }
 
