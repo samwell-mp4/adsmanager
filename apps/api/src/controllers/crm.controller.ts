@@ -3,7 +3,7 @@ import AdmZip from 'adm-zip';
 import { crmService } from '../services/crm.service.js';
 import { evolutionService } from '../services/evolution.service.js';
 import { generateCrmExtensionFiles } from '../services/crm-extension-generator.js';
-import { CrmWebhookPayload, LeadStatus, CrmPlatform } from '../types/index.js';
+import { CrmWebhookPayload, LeadStatus, CrmPlatform, CreateOrderInput } from '../types/index.js';
 
 
 export async function webhookHandler(
@@ -683,6 +683,68 @@ export async function getLeadTimelineHandler(
     return reply.status(500).send({ success: false, error: err.message });
   }
 }
+
+// ==========================================
+// COMANDAS / PEDIDOS HANDLERS
+// ==========================================
+
+export async function createOrderHandler(
+  req: FastifyRequest<{ Body: CreateOrderInput }>,
+  reply: FastifyReply
+) {
+  try {
+    const order = await crmService.createOrder(req.body);
+    return reply.status(201).send({ success: true, data: order });
+  } catch (err: any) {
+    return reply.status(400).send({ success: false, message: err.message });
+  }
+}
+
+export async function listOrdersHandler(
+  req: FastifyRequest<{
+    Querystring: {
+      conversation_id?: string;
+      search?: string;
+      status?: string;
+      limit?: string;
+      offset?: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const conversation_id = req.query.conversation_id ? parseInt(req.query.conversation_id, 10) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
+    const result = await crmService.listOrders({
+      conversation_id,
+      search: req.query.search,
+      status: req.query.status,
+      limit,
+      offset,
+    });
+    return reply.send({ success: true, data: result.orders, total: result.total });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+export async function getOrderHandler(
+  req: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const order = await crmService.getOrderById(id);
+    if (!order) {
+      return reply.status(404).send({ success: false, message: 'Pedido não encontrado.' });
+    }
+    return reply.send({ success: true, data: order });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
 
 
 

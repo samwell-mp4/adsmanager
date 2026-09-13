@@ -72,7 +72,52 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [statuses, setStatuses] = useState<any[]>([]);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
   const [selectedTagFilter, setSelectedTagFilter] = useState<number | 'all'>('all');
-  const [rightPanelTab, setRightPanelTab] = useState<'RESUMO' | 'ATIVIDADES' | 'FOLLOW_UP' | 'NOTAS' | 'CATALOGO'>('RESUMO');
+  const [rightPanelTab, setRightPanelTab] = useState<'RESUMO' | 'ATIVIDADES' | 'FOLLOW_UP' | 'NOTAS' | 'CATALOGO' | 'PEDIDOS'>('RESUMO');
+
+  // Comandas / Pedidos de Venda States
+  const [leadOrders, setLeadOrders] = useState<any[]>([]);
+  const [showOrderModal, setShowOrderModal] = useState<boolean>(false);
+  const [orderSubmitting, setOrderSubmitting] = useState<boolean>(false);
+  const [activeOrderReceiptModal, setActiveOrderReceiptModal] = useState<any | null>(null);
+  const [copiedReceipt, setCopiedReceipt] = useState<boolean>(false);
+
+  const [orderForm, setOrderForm] = useState<{
+    customer_name: string;
+    customer_cpf: string;
+    customer_email: string;
+    customer_phone: string;
+    delivery_address: string;
+    delivery_method: 'uber_flash' | 'motoboy' | 'retirada' | 'correios' | 'outro';
+    shipping_fee: number;
+    discount: number;
+    payment_method: 'pix' | 'cartao_vista' | 'cartao_parcelado' | 'dinheiro' | 'outro';
+    installments: number;
+    notes: string;
+    send_whatsapp: boolean;
+    items: Array<{
+      product_id: number | null;
+      product_name: string;
+      variant_name: string;
+      quantity: number;
+      unit_price: number;
+    }>;
+  }>({
+    customer_name: '',
+    customer_cpf: '',
+    customer_email: '',
+    customer_phone: '',
+    delivery_address: '',
+    delivery_method: 'uber_flash',
+    shipping_fee: 0,
+    discount: 0,
+    payment_method: 'cartao_parcelado',
+    installments: 6,
+    notes: '',
+    send_whatsapp: true,
+    items: [
+      { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0 }
+    ]
+  });
 
   // Omnichannel Catalog States (Fase 4)
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
@@ -259,6 +304,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
         profile_id: selectedProfileId !== 'all' ? selectedProfileId : undefined,
         lead_status: selectedStatus !== 'all' ? selectedStatus : undefined,
+        tag_id: selectedTagFilter !== 'all' ? selectedTagFilter : undefined,
         search: searchTerm.trim() ? searchTerm.trim() : undefined,
         marketplace_only: marketplaceOnly,
       });
@@ -477,15 +523,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       const data = await api.getCrmConversationDetails(id);
       setActiveThread(data);
 
-      // Carregar notas, follow-ups e timeline da conversa
-      const [notes, followups, timeline] = await Promise.all([
+      // Carregar notas, follow-ups, timeline e pedidos da conversa
+      const [notes, followups, timeline, orders] = await Promise.all([
         api.getCrmLeadNotes(id).catch(() => []),
         api.getCrmLeadFollowups(id).catch(() => []),
-        api.getCrmLeadTimeline(id).catch(() => [])
+        api.getCrmLeadTimeline(id).catch(() => []),
+        api.getCrmOrders({ conversation_id: id }).catch(() => [])
       ]);
       setLeadNotes(notes || []);
       setLeadFollowups(followups || []);
       setLeadTimeline(timeline || []);
+      setLeadOrders(orders || []);
     } catch (err: any) {
       console.error('Error fetching thread:', err);
     } finally {
@@ -784,7 +832,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   // Initial load & filter change
   useEffect(() => {
     fetchConversations();
-  }, [selectedPlatform, selectedProfileId, selectedStatus, searchTerm, marketplaceOnly]);
+  }, [selectedPlatform, selectedProfileId, selectedStatus, selectedTagFilter, searchTerm, marketplaceOnly]);
 
   // Load thread when selectedId changes
   useEffect(() => {
@@ -814,7 +862,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [autoRefresh, selectedId, selectedPlatform, selectedProfileId, selectedStatus, marketplaceOnly]);
+  }, [autoRefresh, selectedId, selectedPlatform, selectedProfileId, selectedStatus, selectedTagFilter, marketplaceOnly]);
 
   // Fetch real Instagram Insights
   const fetchInsights = async () => {
@@ -962,6 +1010,253 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       return true;
     });
   }, [catalogProducts, catalogSearch, catalogCategoryFilter]);
+
+  // ==========================================
+  // COMANDAS & PEDIDOS DE VENDA HANDLERS
+  // ==========================================
+
+  const handleOpenCreateOrder = (presetProduct?: any) => {
+    if (!activeThread?.conversation) return;
+    const conv = activeThread.conversation;
+
+    let initialItem = {
+      product_id: null as number | null,
+      product_name: '',
+      variant_name: '',
+      quantity: 1,
+      unit_price: 0
+    };
+
+    if (presetProduct) {
+      initialItem = {
+        product_id: presetProduct.id,
+        product_name: presetProduct.name,
+        variant_name: '',
+        quantity: 1,
+        unit_price: Number(presetProduct.promotional_price || presetProduct.price || 0)
+      };
+    } else if (conv.product_title) {
+      const priceNum = conv.product_price ? parseFloat(String(conv.product_price).replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')) || 0 : 0;
+      initialItem = {
+        product_id: null,
+        product_name: conv.product_title,
+        variant_name: '',
+        quantity: 1,
+        unit_price: priceNum
+      };
+    }
+
+    setOrderForm({
+      customer_name: conv.customer_name || '',
+      customer_cpf: conv.custom_fields?.cpf || '',
+      customer_email: conv.customer_email || '',
+      customer_phone: conv.customer_phone || '',
+      delivery_address: [conv.customer_address, conv.customer_city, conv.customer_state].filter(Boolean).join(' - '),
+      delivery_method: 'uber_flash',
+      shipping_fee: 0,
+      discount: 0,
+      payment_method: 'cartao_parcelado',
+      installments: 6,
+      notes: '',
+      send_whatsapp: true,
+      items: [initialItem]
+    });
+
+    setShowOrderModal(true);
+  };
+
+  const handleAddOrderItem = () => {
+    setOrderForm(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0 }
+      ]
+    }));
+  };
+
+  const handleRemoveOrderItem = (index: number) => {
+    if (orderForm.items.length <= 1) return;
+    setOrderForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleUpdateOrderItem = (index: number, field: string, value: any) => {
+    setOrderForm(prev => {
+      const nextItems = [...prev.items];
+      nextItems[index] = { ...nextItems[index], [field]: value };
+      return { ...prev, items: nextItems };
+    });
+  };
+
+  const handleSelectCatalogForOrderItem = (index: number, product: any) => {
+    const priceVal = Number(product.promotional_price || product.price || 0);
+    setOrderForm(prev => {
+      const nextItems = [...prev.items];
+      nextItems[index] = {
+        ...nextItems[index],
+        product_id: product.id,
+        product_name: product.name,
+        unit_price: priceVal
+      };
+      return { ...prev, items: nextItems };
+    });
+  };
+
+  const orderSubtotal = useMemo(() => {
+    return orderForm.items.reduce((acc, item) => acc + (Number(item.quantity || 1) * Number(item.unit_price || 0)), 0);
+  }, [orderForm.items]);
+
+  const orderTotalAmount = useMemo(() => {
+    const total = orderSubtotal + Number(orderForm.shipping_fee || 0) - Number(orderForm.discount || 0);
+    return Math.max(0, total);
+  }, [orderSubtotal, orderForm.shipping_fee, orderForm.discount]);
+
+  const handleSaveOrder = async () => {
+    if (!orderForm.customer_name.trim()) {
+      setFeedback({ type: 'error', message: 'Por favor, informe o nome do cliente' });
+      return;
+    }
+    const validItems = orderForm.items.filter(it => it.product_name.trim() && it.quantity > 0);
+    if (validItems.length === 0) {
+      setFeedback({ type: 'error', message: 'Adicione ao menos 1 produto válido à comanda' });
+      return;
+    }
+
+    setOrderSubmitting(true);
+    setFeedback(null);
+
+    try {
+      const payload: any = {
+        conversation_id: selectedId || undefined,
+        customer_name: orderForm.customer_name.trim(),
+        customer_cpf: orderForm.customer_cpf.trim(),
+        customer_email: orderForm.customer_email.trim(),
+        customer_phone: orderForm.customer_phone.trim(),
+        delivery_address: orderForm.delivery_address.trim(),
+        delivery_method: orderForm.delivery_method,
+        shipping_fee: Number(orderForm.shipping_fee) || 0,
+        discount: Number(orderForm.discount) || 0,
+        payment_method: orderForm.payment_method,
+        installments: Number(orderForm.installments) || 1,
+        notes: orderForm.notes.trim(),
+        send_whatsapp: orderForm.send_whatsapp,
+        items: validItems.map(it => ({
+          product_id: it.product_id || undefined,
+          product_name: it.product_name.trim(),
+          variant_name: it.variant_name?.trim() || undefined,
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unit_price) || 0
+        }))
+      };
+
+      const result = await api.createCrmOrder(payload);
+      setFeedback({ 
+        type: 'success', 
+        message: `Comanda ${result.order?.order_code || ''} gerada com sucesso! ${orderForm.send_whatsapp ? 'Recibo oficial disparado no WhatsApp.' : ''}` 
+      });
+
+      setShowOrderModal(false);
+      setRightPanelTab('PEDIDOS');
+
+      if (selectedId) {
+        await fetchThread(selectedId, true);
+        await fetchConversations(true);
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Erro ao gerar comanda de venda' });
+    } finally {
+      setOrderSubmitting(false);
+    }
+  };
+
+  const generateReceiptText = (order: any) => {
+    const d = new Date(order.created_at || Date.now());
+    const monthNames = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = monthNames[d.getMonth()] || String(d.getMonth() + 1);
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+
+    let paymentLabel = 'Pix';
+    if (order.payment_method === 'cartao_vista') paymentLabel = 'Cartão de Crédito à vista';
+    else if (order.payment_method === 'cartao_parcelado') {
+      const inst = order.installments || 1;
+      const val = order.installment_amount ? ` (R$ ${Number(order.installment_amount).toFixed(2).replace('.', ',')}/mês)` : '';
+      paymentLabel = `Cartão de Crédito em ${inst}x${val}`;
+    } else if (order.payment_method === 'dinheiro') paymentLabel = 'Dinheiro';
+
+    let deliveryLabel = 'Retirada Pessoalmente (Loja)';
+    if (order.delivery_method === 'uber_flash') deliveryLabel = 'Uber Flash';
+    else if (order.delivery_method === 'motoboy') deliveryLabel = 'Motoboy (Entrega Expressa)';
+    else if (order.delivery_method === 'correios') deliveryLabel = 'Correios / Transportadora';
+
+    let itemsText = '';
+    if (order.items && order.items.length > 0) {
+      itemsText = order.items.map((it: any) => {
+        const vText = it.variant_name ? ` (${it.variant_name})` : '';
+        const priceFmt = `R$ ${Number(it.unit_price).toFixed(2).replace('.', ',')}`;
+        return `${it.quantity}x ${it.product_name}${vText}\nValor : ${priceFmt}`;
+      }).join('\n\n');
+    } else {
+      itemsText = '1x Produto Diversos\nValor : R$ ' + Number(order.total_amount).toFixed(2).replace('.', ',');
+    }
+
+    const freteText = order.shipping_fee > 0 ? `\nFrete: R$ ${Number(order.shipping_fee).toFixed(2).replace('.', ',')}` : '';
+
+    return `Data: ${day} / ${month} / ${year}
+Horário: ${hours}:${minutes}
+Código da Venda: ${order.order_code}
+Produto expedido por Snack Store BH - Eletronics e Smartwatch's
+CNPJ: 32.404.968/0001-70 - Minas Gerais (Belo Horizonte)
+Endereço :
+Edifício Savannah Mall
+R. Araguari, 359 - Barro Preto,
+Belo Horizonte - MG, 30190-110
+Segundo andar ( saindo do elevador saia à direita, final do corredor ) , sala 55
+
+Nome do Cliente: ${order.customer_name || 'Cliente'}
+CPF do Cliente: ${order.customer_cpf || 'Não informado'}
+Email do Cliente: ${order.customer_email || 'Não informado'}
+Telefone do Cliente: ${order.customer_phone || ''}
+Endereço: ${order.delivery_address || 'Retirada no Balcão'}
+
+Produto :
+${itemsText}${freteText}
+
+Total: R$ ${Number(order.total_amount).toFixed(2).replace('.', ',')}
+Forma de Pagamento: ${paymentLabel}
+Modo de entrega: ${deliveryLabel}
+
+Att: Snack Store BH
+Recibo de Garantia e Autenticidade do Produto.
+Agradecemos a preferência!
+Instagram: @SNACKSTOREBH`;
+  };
+
+  const handleCopyReceiptToClipboard = (order: any) => {
+    const text = generateReceiptText(order);
+    navigator.clipboard.writeText(text);
+    setCopiedReceipt(true);
+    setFeedback({ type: 'success', message: 'Recibo oficial copiado para a área de transferência!' });
+    setTimeout(() => {
+      setCopiedReceipt(false);
+      setFeedback(null);
+    }, 3000);
+  };
+
+  const handleResendReceiptWhatsApp = async (order: any) => {
+    if (!selectedId) return;
+    const text = generateReceiptText(order);
+    await handleSendReply(text);
+    setFeedback({ type: 'success', message: 'Recibo reenviado no WhatsApp com sucesso!' });
+  };
 
   // Update lead status
   const handleStatusChange = async (targetId: number, newStatus: string) => {
@@ -2088,7 +2383,17 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               <div className="px-4 py-3 border-b border-slate-100 bg-white space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Etapa Comercial:</span>
-                  <div className="shrink-0">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenCreateOrder()}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1.5 shadow-xs"
+                      title="Abrir Novo Pedido / Comanda para este cliente"
+                    >
+                      <ShoppingBag className="h-3 w-3" />
+                      <span>+ Nova Comanda</span>
+                    </button>
+                    <div className="shrink-0">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
+                  </div>
                 </div>
 
                 {/* Tags list with inline delete + Add Tag Popover */}
@@ -2194,13 +2499,13 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
               </div>
 
-              {/* Sidebar Tabs Switcher */}
-              <div className="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 shrink-0">
+              {/* Sidebar Tabs Switcher (Scrollable) */}
+              <div className="flex items-center border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 shrink-0 overflow-x-auto no-scrollbar scroll-smooth whitespace-nowrap px-1">
                 <button
                   onClick={() => setRightPanelTab('RESUMO')}
-                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                  className={`px-3 py-2.5 text-center transition border-b-2 shrink-0 ${
                     rightPanelTab === 'RESUMO'
-                      ? 'border-blue-600 text-blue-600 bg-white'
+                      ? 'border-blue-600 text-blue-600 bg-white font-bold'
                       : 'border-transparent hover:text-slate-800'
                   }`}
                 >
@@ -2208,9 +2513,9 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </button>
                 <button
                   onClick={() => setRightPanelTab('ATIVIDADES')}
-                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                  className={`px-3 py-2.5 text-center transition border-b-2 shrink-0 ${
                     rightPanelTab === 'ATIVIDADES'
-                      ? 'border-blue-600 text-blue-600 bg-white'
+                      ? 'border-blue-600 text-blue-600 bg-white font-bold'
                       : 'border-transparent hover:text-slate-800'
                   }`}
                 >
@@ -2218,9 +2523,9 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </button>
                 <button
                   onClick={() => setRightPanelTab('FOLLOW_UP')}
-                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                  className={`px-3 py-2.5 text-center transition border-b-2 shrink-0 ${
                     rightPanelTab === 'FOLLOW_UP'
-                      ? 'border-blue-600 text-blue-600 bg-white'
+                      ? 'border-blue-600 text-blue-600 bg-white font-bold'
                       : 'border-transparent hover:text-slate-800'
                   }`}
                 >
@@ -2228,9 +2533,9 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </button>
                 <button
                   onClick={() => setRightPanelTab('NOTAS')}
-                  className={`flex-1 py-2.5 text-center transition border-b-2 ${
+                  className={`px-3 py-2.5 text-center transition border-b-2 shrink-0 ${
                     rightPanelTab === 'NOTAS'
-                      ? 'border-blue-600 text-blue-600 bg-white'
+                      ? 'border-blue-600 text-blue-600 bg-white font-bold'
                       : 'border-transparent hover:text-slate-800'
                   }`}
                 >
@@ -2238,15 +2543,27 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </button>
                 <button
                   onClick={() => setRightPanelTab('CATALOGO')}
-                  className={`flex-1 py-2.5 text-center transition border-b-2 flex items-center justify-center gap-1 ${
+                  className={`px-3 py-2.5 text-center transition border-b-2 flex items-center justify-center gap-1 shrink-0 ${
                     rightPanelTab === 'CATALOGO'
                       ? 'border-purple-600 text-purple-700 bg-white font-bold'
                       : 'border-transparent hover:text-slate-800 text-purple-700'
                   }`}
                   title="Catálogo de Produtos para Vendas"
                 >
-                  <Package className="h-3 w-3 text-purple-600" />
+                  <Package className="h-3.5 w-3.5 text-purple-600" />
                   <span>Catálogo</span>
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('PEDIDOS')}
+                  className={`px-3 py-2.5 text-center transition border-b-2 flex items-center justify-center gap-1.5 shrink-0 ${
+                    rightPanelTab === 'PEDIDOS'
+                      ? 'border-emerald-600 text-emerald-700 bg-white font-bold'
+                      : 'border-transparent hover:text-slate-800 text-emerald-700'
+                  }`}
+                  title="Comandas e Pedidos de Venda"
+                >
+                  <ShoppingBag className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Pedidos ({leadOrders.length})</span>
                 </button>
               </div>
 
@@ -2330,20 +2647,34 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
                     {/* Commercial Smart Card */}
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 shadow-xs">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                        <DollarSign className="h-3 w-3 text-emerald-600" />
-                        Visão Comercial
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                          <DollarSign className="h-3 w-3 text-emerald-600" />
+                          Visão Comercial
+                        </span>
+                        <button
+                          onClick={() => handleOpenCreateOrder()}
+                          className="text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition flex items-center gap-1"
+                          title="Gerar comanda para este cliente"
+                        >
+                          <Plus className="h-2.5 w-2.5" />
+                          <span>Nova Comanda</span>
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                          <span className="text-[10px] text-slate-400 block">Total Comprado</span>
+                          <span className="text-[10px] text-slate-400 block">Total em Pedidos</span>
                           <span className="font-bold text-emerald-600 text-sm">
-                            {activeThread.conversation.deal_value || 'R$ 0,00'}
+                            {leadOrders.length > 0
+                              ? `R$ ${leadOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0).toFixed(2).replace('.', ',')}`
+                              : (activeThread.conversation.deal_value || 'R$ 0,00')}
                           </span>
                         </div>
                         <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                          <span className="text-[10px] text-slate-400 block">Pedidos Concluídos</span>
-                          <span className="font-bold text-slate-700 text-sm">0 pedidos</span>
+                          <span className="text-[10px] text-slate-400 block">Pedidos Registrados</span>
+                          <span className="font-bold text-slate-700 text-sm">
+                            {leadOrders.length} pedido{leadOrders.length !== 1 ? 's' : ''}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2886,6 +3217,151 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                                     <span>+{prod.media.length} fotos</span>
                                   </button>
                                 )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB: COMANDAS E PEDIDOS DE VENDA */}
+                {rightPanelTab === 'PEDIDOS' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <ShoppingBag className="h-4 w-4 text-emerald-600" />
+                        <span className="text-xs font-bold text-slate-800">Comandas & Pedidos ({leadOrders.length})</span>
+                      </div>
+                      <button
+                        onClick={() => handleOpenCreateOrder()}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 shadow-xs"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Nova Comanda</span>
+                      </button>
+                    </div>
+
+                    {leadOrders.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-slate-400 space-y-3">
+                        <ShoppingBag className="h-10 w-10 text-slate-300 mx-auto" />
+                        <div className="space-y-1">
+                          <p className="font-semibold text-slate-700">Nenhum pedido gerado para este cliente.</p>
+                          <p className="text-[11px] text-slate-500">
+                            Abra uma comanda comercial com dados pré-preenchidos e recibo automático no WhatsApp.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleOpenCreateOrder()}
+                          className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm inline-flex items-center gap-1.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>Abrir Primeira Comanda</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {leadOrders.map((order: any) => {
+                          const deliveryLabels: Record<string, string> = {
+                            uber_flash: 'Uber Flash',
+                            motoboy: 'Motoboy Express',
+                            retirada: 'Retirada em Loja',
+                            correios: 'Correios'
+                          };
+                          const paymentLabels: Record<string, string> = {
+                            pix: 'PIX',
+                            cartao_vista: 'Cartão à Vista',
+                            cartao_parcelado: `Cartão ${order.installments || 1}x`,
+                            dinheiro: 'Dinheiro'
+                          };
+
+                          return (
+                            <div
+                              key={order.id}
+                              className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200 hover:border-slate-300 transition shadow-2xs space-y-3"
+                            >
+                              {/* Order Header */}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                    #{order.order_code}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {new Date(order.created_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })} • {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  {order.status?.toUpperCase() || 'CONFIRMADO'}
+                                </span>
+                              </div>
+
+                              {/* Items List */}
+                              <div className="bg-white rounded-lg p-2.5 border border-slate-100 space-y-1.5 text-xs">
+                                {order.items && order.items.length > 0 ? (
+                                  order.items.map((it: any, idx: number) => (
+                                    <div key={idx} className="flex items-center justify-between text-slate-700">
+                                      <span className="font-medium truncate pr-2">
+                                        {it.quantity}x {it.product_name} {it.variant_name ? `(${it.variant_name})` : ''}
+                                      </span>
+                                      <span className="font-semibold text-slate-900 shrink-0">
+                                        R$ {Number(it.total_price || (it.quantity * it.unit_price)).toFixed(2).replace('.', ',')}
+                                      </span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-slate-500">1x Produto Geral</div>
+                                )}
+
+                                {order.shipping_fee > 0 && (
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+                                    <span>Frete ({deliveryLabels[order.delivery_method] || order.delivery_method}):</span>
+                                    <span>R$ {Number(order.shipping_fee).toFixed(2).replace('.', ',')}</span>
+                                  </div>
+                                )}
+
+                                <div className="flex items-baseline justify-between pt-1.5 border-t border-slate-200">
+                                  <span className="font-bold text-slate-800">Total do Pedido:</span>
+                                  <span className="font-extrabold text-emerald-600 text-sm">
+                                    R$ {Number(order.total_amount).toFixed(2).replace('.', ',')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Metadata Badges */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                <span className="px-2 py-0.5 rounded bg-slate-200/80 text-slate-700 font-semibold">
+                                  {paymentLabels[order.payment_method] || order.payment_method}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">
+                                  {deliveryLabels[order.delivery_method] || order.delivery_method}
+                                </span>
+                                {order.whatsapp_sent && (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1">
+                                    <Check className="h-2.5 w-2.5" />
+                                    <span>WhatsApp OK</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveOrderReceiptModal(order)}
+                                  className="py-1.5 px-2 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                                >
+                                  <FileText className="h-3.5 w-3.5 text-blue-600" />
+                                  <span>Ver Recibo</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyReceiptToClipboard(order)}
+                                  className="py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition flex items-center justify-center gap-1.5"
+                                >
+                                  <Copy className="h-3.5 w-3.5 text-emerald-600" />
+                                  <span>Copiar Texto</span>
+                                </button>
                               </div>
                             </div>
                           );
@@ -4794,6 +5270,418 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EMITIR COMANDA / PEDIDO DE VENDA */}
+      {showOrderModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-2xl my-8 overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                  <ShoppingBag className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Emitir Comanda / Pedido de Venda
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Snack Store BH • Edifício Savannah Mall (Barro Preto)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOrderModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1 text-xs">
+              {/* Section 1: Dados do Cliente */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px] border-b border-slate-100 pb-1">
+                  <User className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Dados do Cliente</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Nome Completo *</label>
+                    <input
+                      type="text"
+                      value={orderForm.customer_name}
+                      onChange={(e) => setOrderForm({ ...orderForm, customer_name: e.target.value })}
+                      placeholder="Ex: William Gomes Pacheco"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Telefone / WhatsApp</label>
+                    <input
+                      type="text"
+                      value={orderForm.customer_phone}
+                      onChange={(e) => setOrderForm({ ...orderForm, customer_phone: e.target.value })}
+                      placeholder="Ex: 31998592398"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">CPF do Cliente</label>
+                    <input
+                      type="text"
+                      value={orderForm.customer_cpf}
+                      onChange={(e) => setOrderForm({ ...orderForm, customer_cpf: e.target.value })}
+                      placeholder="Ex: 299.986.358.61"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={orderForm.customer_email}
+                      onChange={(e) => setOrderForm({ ...orderForm, customer_email: e.target.value })}
+                      placeholder="Ex: cliente@email.com"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-slate-600 font-semibold mb-1">Endereço de Entrega Completo</label>
+                    <input
+                      type="text"
+                      value={orderForm.delivery_address}
+                      onChange={(e) => setOrderForm({ ...orderForm, delivery_address: e.target.value })}
+                      placeholder="Ex: Rua dos Guajajaras, 40 - Centro, Belo Horizonte - MG"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Produtos da Comanda */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                  <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px]">
+                    <Package className="h-3.5 w-3.5 text-purple-600" />
+                    <span>Produtos da Comanda</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddOrderItem}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Adicionar Item</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {orderForm.items.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-slate-50/80 border border-slate-200 space-y-2"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                        <div className="md:col-span-6">
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">
+                            Produto {idx + 1}
+                          </label>
+                          <input
+                            type="text"
+                            value={item.product_name}
+                            onChange={(e) => handleUpdateOrderItem(idx, 'product_name', e.target.value)}
+                            placeholder="Nome ou descrição do produto..."
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">Qtd</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => handleUpdateOrderItem(idx, 'quantity', parseInt(e.target.value, 10) || 1)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500 text-center font-bold"
+                          />
+                        </div>
+
+                        <div className="md:col-span-3">
+                          <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">Preço Unit. (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.unit_price}
+                            onChange={(e) => handleUpdateOrderItem(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-blue-500 text-right font-bold"
+                          />
+                        </div>
+
+                        <div className="md:col-span-1 flex items-end justify-center pt-3 md:pt-0">
+                          {orderForm.items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOrderItem(idx)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                              title="Remover produto"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Fast catalog selector pill */}
+                      {catalogProducts.length > 0 && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto text-[10px] pt-1 border-t border-slate-100 no-scrollbar">
+                          <span className="text-slate-400 font-semibold shrink-0">Catálogo:</span>
+                          {catalogProducts.slice(0, 5).map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => handleSelectCatalogForOrderItem(idx, p)}
+                              className="px-2 py-0.5 rounded bg-white hover:bg-purple-50 text-purple-700 border border-slate-200 hover:border-purple-300 whitespace-nowrap font-medium transition"
+                            >
+                              {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 3: Logística & Pagamento */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Logística */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px]">
+                    <MapPin className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Modo de Entrega</span>
+                  </div>
+                  <div>
+                    <select
+                      value={orderForm.delivery_method}
+                      onChange={(e: any) => setOrderForm({ ...orderForm, delivery_method: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-semibold focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="uber_flash">Uber Flash</option>
+                      <option value="motoboy">Motoboy Express (BH e Região)</option>
+                      <option value="retirada">Retirada Pessoalmente (Loja Física - Sala 55)</option>
+                      <option value="correios">Correios / Transportadora</option>
+                      <option value="outro">Outro / A Combinar</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Valor do Frete (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={orderForm.shipping_fee}
+                      onChange={(e) => setOrderForm({ ...orderForm, shipping_fee: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 font-bold focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Pagamento */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-slate-800 font-bold uppercase tracking-wider text-[11px]">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Forma de Pagamento</span>
+                  </div>
+                  <div>
+                    <select
+                      value={orderForm.payment_method}
+                      onChange={(e: any) => setOrderForm({ ...orderForm, payment_method: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-semibold focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="pix">PIX (À Vista)</option>
+                      <option value="cartao_vista">Cartão de Crédito (1x à vista)</option>
+                      <option value="cartao_parcelado">Cartão de Crédito Parcelado</option>
+                      <option value="dinheiro">Dinheiro na Entrega</option>
+                      <option value="outro">Outro</option>
+                    </select>
+                  </div>
+
+                  {orderForm.payment_method === 'cartao_parcelado' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-600 font-semibold mb-1">Parcelas</label>
+                        <select
+                          value={orderForm.installments}
+                          onChange={(e) => setOrderForm({ ...orderForm, installments: parseInt(e.target.value, 10) || 1 })}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 font-bold focus:outline-none"
+                        >
+                          {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                            <option key={n} value={n}>{n}x parcelas</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-semibold mb-1">Valor Parcela</label>
+                        <div className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 font-bold">
+                          R$ {(orderTotalAmount / (orderForm.installments || 1)).toFixed(2).replace('.', ',')}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Desconto Comercial (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={orderForm.discount}
+                      onChange={(e) => setOrderForm({ ...orderForm, discount: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 font-bold focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: WhatsApp Receipt Dispatch Toggle */}
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1.5">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={orderForm.send_whatsapp}
+                    onChange={(e) => setOrderForm({ ...orderForm, send_whatsapp: e.target.checked })}
+                    className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                  />
+                  <span className="font-bold text-emerald-900 text-xs">
+                    Disparar Recibo Oficial de Garantia no WhatsApp do Cliente Agora
+                  </span>
+                </label>
+                <p className="text-[11px] text-emerald-700 pl-6.5">
+                  Gera a mensagem completa com CNPJ, endereço da loja física no Barro Preto, dados do cliente, produtos, valores e garantia.
+                </p>
+              </div>
+
+              {/* Financial Auto-sync Notice */}
+              <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-between text-[11px] text-blue-800">
+                <span className="flex items-center gap-1.5">
+                  <DollarSign className="h-3.5 w-3.5 text-blue-600" />
+                  <strong>Controle Financeiro:</strong> Registrará receita automaticamente no painel.
+                </span>
+                <span className="font-bold text-blue-900">
+                  + R$ {orderTotalAmount.toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <div>
+                <span className="text-slate-500 text-xs block font-medium">Total da Venda:</span>
+                <span className="text-xl font-black text-emerald-600">
+                  R$ {orderTotalAmount.toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOrderModal(false)}
+                  disabled={orderSubmitting}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold transition text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveOrder}
+                  disabled={orderSubmitting}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                >
+                  {orderSubmitting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Emitindo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" />
+                      <span>Confirmar & Emitir Comanda</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VISUALIZAR & COPIAR RECIBO OFICIAL */}
+      {activeOrderReceiptModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg my-8 overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Recibo Oficial de Garantia
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">
+                    Código: #{activeOrderReceiptModal.order_code}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveOrderReceiptModal(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              <pre className="p-4 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs whitespace-pre-wrap leading-relaxed select-all overflow-x-auto shadow-inner border border-slate-800">
+                {generateReceiptText(activeOrderReceiptModal)}
+              </pre>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => handleCopyReceiptToClipboard(activeOrderReceiptModal)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <Copy className="h-4 w-4" />
+                <span>{copiedReceipt ? 'Copiado com Sucesso!' : 'Copiar Texto Completo'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleResendReceiptWhatsApp(activeOrderReceiptModal)}
+                  className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold transition text-xs flex items-center gap-1.5 border border-blue-200"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Reenviar no WhatsApp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveOrderReceiptModal(null)}
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-600 font-bold transition text-xs border border-slate-200"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>

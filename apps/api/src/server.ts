@@ -163,6 +163,9 @@ async function start() {
     await fastify.register(crmRoutes);
     const { catalogRoutes } = await import('./routes/catalog.routes.js');
     await fastify.register(catalogRoutes);
+    const { financeRoutes } = await import('./routes/finance.routes.js');
+    await fastify.register(financeRoutes, { prefix: '/finance' });
+    await fastify.register(financeRoutes, { prefix: '/api/finance' });
 
     // Save official CRM extension zip to /tmp for direct host/container access
     try {

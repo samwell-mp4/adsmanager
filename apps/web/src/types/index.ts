@@ -73,3 +73,101 @@ export interface CreateProxyDTO {
   password?: string;
   type?: ProxyType;
 }
+
+export interface CrmOrderItem {
+  id?: number;
+  order_id?: number;
+  product_id?: number | null;
+  product_name: string;
+  variant_name?: string | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+export interface CrmOrder {
+  id: number;
+  order_code: string;
+  conversation_id?: number | null;
+  customer_name: string;
+  customer_cpf?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  delivery_address?: string | null;
+  delivery_method: 'uber_flash' | 'motoboy' | 'retirada' | 'correios' | 'outro';
+  shipping_fee: number;
+  subtotal: number;
+  discount: number;
+  total_amount: number;
+  payment_method: 'pix' | 'cartao_vista' | 'cartao_parcelado' | 'dinheiro' | 'outro';
+  installments: number;
+  installment_amount: number;
+  status: 'pendente' | 'confirmado' | 'enviado' | 'entregue' | 'cancelado';
+  notes?: string | null;
+  whatsapp_sent: boolean;
+  items?: CrmOrderItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateOrderInput {
+  conversation_id?: number;
+  order_code?: string;
+  customer_name: string;
+  customer_cpf?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  delivery_address?: string;
+  delivery_method?: 'uber_flash' | 'motoboy' | 'retirada' | 'correios' | 'outro';
+  shipping_fee?: number;
+  discount?: number;
+  payment_method?: 'pix' | 'cartao_vista' | 'cartao_parcelado' | 'dinheiro' | 'outro';
+  installments?: number;
+  installment_amount?: number;
+  notes?: string;
+  send_whatsapp?: boolean;
+  items: Array<{
+    product_id?: number;
+    product_name: string;
+    variant_name?: string;
+    quantity: number;
+    unit_price: number;
+  }>;
+}
+
+export interface CrmFinancialTransaction {
+  id: number;
+  type: 'receita' | 'despesa';
+  category: string;
+  description: string;
+  amount: number;
+  payment_method: string;
+  order_id?: number | null;
+  status: 'pago' | 'pendente' | 'cancelado';
+  due_date: string;
+  paid_at?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateFinancialTransactionInput {
+  type: 'receita' | 'despesa';
+  category: string;
+  description: string;
+  amount: number;
+  payment_method?: string;
+  order_id?: number;
+  status?: 'pago' | 'pendente' | 'cancelado';
+  due_date?: string;
+  notes?: string;
+}
+
+export interface FinancialSummary {
+  balance: number;
+  total_income: number;
+  total_expenses: number;
+  pending_income: number;
+  pending_expenses: number;
+  recent_count: number;
+}

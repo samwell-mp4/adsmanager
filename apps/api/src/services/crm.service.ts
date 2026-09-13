@@ -1,7 +1,7 @@
 import { crmRepository } from '../repositories/crm.repository.js';
 import { profileRepository } from '../repositories/profile.repository.js';
 import { dockerManager } from '../managers/docker.manager.js';
-import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform, CrmInsightData } from '../types/index.js';
+import { CrmConversation, CrmMessage, CrmOutgoingMessage, CrmWebhookPayload, LeadStatus, CrmPlatform, CrmInsightData, CreateOrderInput, CrmOrder } from '../types/index.js';
 import { evolutionService } from './evolution.service.js';
 
 export const DEFAULT_N8N_WEBHOOK = 'https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager';
@@ -519,6 +519,92 @@ export class CrmService {
    */
   async getLatestInsights(profileId?: number, timeframe: number = 30) {
     return crmRepository.getLatestInsights(profileId, timeframe);
+  }
+
+  // ==========================================
+  // COMANDAS / PEDIDOS DE VENDA
+  // ==========================================
+
+  async createOrder(data: CreateOrderInput): Promise<CrmOrder> {
+    const order = await crmRepository.createOrder(data);
+
+    // Se solicitado o envio no WhatsApp (ou se houver conversa associada com envio automático habilitado)
+    if (data.send_whatsapp && data.conversation_id) {
+      try {
+        const now = new Date();
+        const months = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        const dateStr = `${now.getDate().toString().padStart(2, '0')} / ${months[now.getMonth()]} / ${now.getFullYear()}`;
+        const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+        // Itens formatados
+        const itemsStr = order.items && order.items.length > 0
+          ? order.items.map(i => `${i.quantity}x ${i.product_name}${i.variant_name ? ` (${i.variant_name})` : ''} - R$: ${Number(i.unit_price).toFixed(2).replace('.', ',')}`).join('\n')
+          : 'Produto diverso';
+
+        // Forma de pagamento e parcelamento
+        let paymentDesc = 'À vista no PIX';
+        if (order.payment_method === 'cartao_parcelado' && order.installments > 1) {
+          paymentDesc = `${order.installments}x de R$: ${Number(order.installment_amount).toFixed(2).replace('.', ',')}`;
+        } else if (order.payment_method === 'cartao_vista') {
+          paymentDesc = 'Cartão de Crédito/Débito à vista';
+        } else if (order.payment_method === 'dinheiro') {
+          paymentDesc = 'Dinheiro na entrega';
+        }
+
+        const receiptMessage =
+`Data: ${dateStr}
+Horário: ${timeStr}
+Código da Venda: ${order.order_code}
+Produto expedido por Snack Store BH - Eletronics e Smartwatch's
+CNPJ: 32.404.968/0001-70 - Minas Gerais (Belo Horizonte)
+Endereço :
+Edifício Savannah Mall
+R. Araguari, 359 - Barro Preto,
+Belo Horizonte - MG, 30190-110
+Segundo andar ( saindo do elevador saia à direita, final do corredor ) , sala 55
+
+Nome do Cliente: ${order.customer_name}
+CPF do Cliente: ${order.customer_cpf || 'Não informado'}
+Email do Cliente: ${order.customer_email || 'Não informado'}
+Telefone do Cliente: ${order.customer_phone || 'Não informado'}
+Endereço : ${order.delivery_address || 'Não informado'}
+
+Produto:
+${itemsStr}
+Valor Total do Produto: R$: ${Number(order.total_amount).toFixed(2).replace('.', ',')} (${paymentDesc})
+Frete: R$: ${Number(order.shipping_fee).toFixed(2).replace('.', ',')} (Método: ${order.delivery_method.toUpperCase()})
+
+—————————-
+
+ESSA MENSAGEM TAMBÉM CONTA COMO COMPROVANTE DE COMPRA, POR FAVOR ARMAZENAR NO CELULAR PARA QUALQUER PROBLEMA
+------------------------
+ LEIA OS TERMOS DA NOSSA LOJA NO INSTAGRAM ( @SNACKSTOREBH )*`;
+
+        // Despachar no chat do WhatsApp da conversa ativa
+        await this.sendReply(data.conversation_id, receiptMessage);
+      } catch (err: any) {
+        console.error('[CrmService] Falha ao enviar comprovante no WhatsApp:', err.message);
+      }
+    }
+
+    return order;
+  }
+
+  async listOrders(filter: {
+    conversation_id?: number;
+    search?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    return crmRepository.listOrders(filter);
+  }
+
+  async getOrderById(id: number) {
+    return crmRepository.getOrderById(id);
   }
 }
 

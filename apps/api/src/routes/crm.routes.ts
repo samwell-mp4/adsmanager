@@ -37,6 +37,9 @@ import {
   updateFollowupHandler,
   deleteFollowupHandler,
   getLeadTimelineHandler,
+  createOrderHandler,
+  listOrdersHandler,
+  getOrderHandler,
 } from '../controllers/crm.controller.js';
 
 export async function crmRoutes(fastify: FastifyInstance) {
@@ -102,6 +105,14 @@ export async function crmRoutes(fastify: FastifyInstance) {
   fastify.post('/api/crm/conversations/:id/followups', createFollowupHandler);
   fastify.patch('/api/crm/followups/:id', updateFollowupHandler);
   fastify.delete('/api/crm/followups/:id', deleteFollowupHandler);
+
+  // Orders / Comandas
+  fastify.get('/api/crm/orders', listOrdersHandler);
+  fastify.post('/api/crm/orders', createOrderHandler);
+  fastify.get('/api/crm/orders/:id', getOrderHandler);
+  fastify.get('/crm/orders', listOrdersHandler);
+  fastify.post('/crm/orders', createOrderHandler);
+  fastify.get('/crm/orders/:id', getOrderHandler);
 
   // Customer Timeline Events
   fastify.get('/api/crm/conversations/:id/timeline', getLeadTimelineHandler);

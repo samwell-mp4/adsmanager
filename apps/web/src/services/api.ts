@@ -669,7 +669,93 @@ export const api = {
     });
     return handleResponse<any>(res);
   },
+
+  // ==========================================
+  // COMANDAS / PEDIDOS DE VENDA
+  // ==========================================
+
+  async createCrmOrder(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async getCrmOrders(params?: { conversation_id?: number; search?: string; status?: string; limit?: number; offset?: number }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.conversation_id) query.set('conversation_id', String(params.conversation_id));
+    if (params?.search) query.set('search', params.search);
+    if (params?.status) query.set('status', params.status);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+
+    const res = await fetch(`${API_BASE}/crm/orders?${query.toString()}`);
+    const json = await handleResponse<any>(res);
+    return Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+  },
+
+  async getCrmOrderById(id: number): Promise<any> {
+    const res = await fetch(`${API_BASE}/crm/orders/${id}`);
+    return handleResponse<any>(res);
+  },
+
+  // ==========================================
+  // CONTROLE FINANCEIRO
+  // ==========================================
+
+  async getFinancialSummary(): Promise<any> {
+    const res = await fetch(`${API_BASE}/finance/summary`);
+    return handleResponse<any>(res);
+  },
+
+  async getFinancialTransactions(params?: {
+    type?: string;
+    category?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ transactions: any[]; total: number }> {
+    const query = new URLSearchParams();
+    if (params?.type) query.set('type', params.type);
+    if (params?.category) query.set('category', params.category);
+    if (params?.status) query.set('status', params.status);
+    if (params?.start_date) query.set('start_date', params.start_date);
+    if (params?.end_date) query.set('end_date', params.end_date);
+    if (params?.search) query.set('search', params.search);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+
+    const res = await fetch(`${API_BASE}/finance/transactions?${query.toString()}`);
+    const json = await handleResponse<any>(res);
+    const transactions = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+    return {
+      transactions,
+      total: json?.total !== undefined ? json.total : transactions.length,
+    };
+  },
+
+  async createFinancialTransaction(data: any): Promise<any> {
+    const res = await fetch(`${API_BASE}/finance/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async deleteFinancialTransaction(id: number): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/finance/transactions/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
 };
+
 
 
 

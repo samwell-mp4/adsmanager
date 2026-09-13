@@ -10,7 +10,13 @@ import {
   CrmTag,
   CrmNote,
   CrmFollowup,
-  CrmEvent
+  CrmEvent,
+  CrmOrder,
+  CrmOrderItem,
+  CreateOrderInput,
+  CrmFinancialTransaction,
+  CreateFinancialTransactionInput,
+  FinancialSummary
 } from '../types/index.js';
 
 let tablesInitialized = false;
@@ -211,6 +217,67 @@ export class CrmRepository {
         CREATE INDEX IF NOT EXISTS idx_crm_followups_sched ON crm_followups(scheduled_at, status);
         CREATE INDEX IF NOT EXISTS idx_crm_events_conv ON crm_events(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_crm_statuses_pos ON crm_statuses(position);
+
+        -- Tabela de Comandas / Pedidos de Venda
+        CREATE TABLE IF NOT EXISTS crm_orders (
+            id SERIAL PRIMARY KEY,
+            order_code VARCHAR(50) NOT NULL UNIQUE,
+            conversation_id INTEGER REFERENCES crm_conversations(id) ON DELETE SET NULL,
+            customer_name VARCHAR(255) NOT NULL,
+            customer_cpf VARCHAR(30),
+            customer_email VARCHAR(255),
+            customer_phone VARCHAR(50),
+            delivery_address TEXT,
+            delivery_method VARCHAR(50) NOT NULL DEFAULT 'uber_flash',
+            shipping_fee NUMERIC(10,2) DEFAULT 0,
+            subtotal NUMERIC(10,2) NOT NULL DEFAULT 0,
+            discount NUMERIC(10,2) DEFAULT 0,
+            total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+            payment_method VARCHAR(50) NOT NULL DEFAULT 'pix',
+            installments INTEGER DEFAULT 1,
+            installment_amount NUMERIC(10,2) DEFAULT 0,
+            status VARCHAR(50) NOT NULL DEFAULT 'confirmado',
+            notes TEXT,
+            whatsapp_sent BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- Itens de cada Pedido/Comanda
+        CREATE TABLE IF NOT EXISTS crm_order_items (
+            id SERIAL PRIMARY KEY,
+            order_id INTEGER NOT NULL REFERENCES crm_orders(id) ON DELETE CASCADE,
+            product_id INTEGER,
+            product_name VARCHAR(255) NOT NULL,
+            variant_name VARCHAR(100),
+            quantity INTEGER NOT NULL DEFAULT 1,
+            unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+            total_price NUMERIC(10,2) NOT NULL DEFAULT 0
+        );
+
+        -- Tabela de Lançamentos do Controle Financeiro (Receitas e Despesas)
+        CREATE TABLE IF NOT EXISTS crm_financial_transactions (
+            id SERIAL PRIMARY KEY,
+            type VARCHAR(20) NOT NULL, -- 'receita' ou 'despesa'
+            category VARCHAR(100) NOT NULL,
+            description VARCHAR(255) NOT NULL,
+            amount NUMERIC(10,2) NOT NULL,
+            payment_method VARCHAR(50) DEFAULT 'pix',
+            order_id INTEGER REFERENCES crm_orders(id) ON DELETE SET NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'pago', -- 'pago', 'pendente', 'cancelado'
+            due_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            paid_at TIMESTAMPTZ,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_crm_orders_conv ON crm_orders(conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_orders_code ON crm_orders(order_code);
+        CREATE INDEX IF NOT EXISTS idx_crm_order_items_order ON crm_order_items(order_id);
+        CREATE INDEX IF NOT EXISTS idx_crm_fin_type ON crm_financial_transactions(type);
+        CREATE INDEX IF NOT EXISTS idx_crm_fin_date ON crm_financial_transactions(due_date);
+        CREATE INDEX IF NOT EXISTS idx_crm_fin_status ON crm_financial_transactions(status);
       `);
 
       // Seed default statuses se tabela estiver vazia
@@ -1627,6 +1694,402 @@ export class CrmRepository {
         [conversationId, eventType, title, description || null, JSON.stringify(metadata || {})]
       );
       return res.rows[0];
+    } finally {
+      client.release();
+    }
+  }
+
+  // ==========================================
+  // COMANDAS / PEDIDOS DE VENDA
+  // ==========================================
+
+  async createOrder(data: CreateOrderInput): Promise<CrmOrder> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    let released = false;
+
+    try {
+      await client.query('BEGIN');
+
+      const orderCode = data.order_code || `VND-${Date.now().toString().slice(-8)}`;
+      const shippingFee = Number(data.shipping_fee) || 0;
+      const discount = Number(data.discount) || 0;
+
+      // Calcular subtotal e total
+      let subtotal = 0;
+      for (const item of data.items) {
+        subtotal += (Number(item.unit_price) || 0) * (Number(item.quantity) || 1);
+      }
+      const totalAmount = Math.max(0, subtotal + shippingFee - discount);
+      const installments = Number(data.installments) || 1;
+      const installmentAmount = Number(data.installment_amount) || (installments > 1 ? Number((totalAmount / installments).toFixed(2)) : totalAmount);
+
+      const orderRes = await client.query(
+        `INSERT INTO crm_orders (
+            order_code, conversation_id, customer_name, customer_cpf,
+            customer_email, customer_phone, delivery_address, delivery_method,
+            shipping_fee, subtotal, discount, total_amount, payment_method,
+            installments, installment_amount, status, notes, whatsapp_sent
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         RETURNING *;`,
+        [
+          orderCode,
+          data.conversation_id || null,
+          data.customer_name.trim(),
+          data.customer_cpf?.trim() || null,
+          data.customer_email?.trim() || null,
+          data.customer_phone?.trim() || null,
+          data.delivery_address?.trim() || null,
+          data.delivery_method || 'uber_flash',
+          shippingFee,
+          subtotal,
+          discount,
+          totalAmount,
+          data.payment_method || 'pix',
+          installments,
+          installmentAmount,
+          'confirmado',
+          data.notes?.trim() || null,
+          data.send_whatsapp || false,
+        ]
+      );
+
+      const order = orderRes.rows[0];
+
+      // Inserir itens
+      const savedItems: CrmOrderItem[] = [];
+      for (const it of data.items) {
+        const itemQty = Number(it.quantity) || 1;
+        const itemUnit = Number(it.unit_price) || 0;
+        const itemTotal = Number((itemQty * itemUnit).toFixed(2));
+
+        const itemRes = await client.query(
+          `INSERT INTO crm_order_items (
+              order_id, product_id, product_name, variant_name, quantity, unit_price, total_price
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *;`,
+          [
+            order.id,
+            it.product_id || null,
+            it.product_name.trim(),
+            it.variant_name?.trim() || null,
+            itemQty,
+            itemUnit,
+            itemTotal,
+          ]
+        );
+        savedItems.push(itemRes.rows[0]);
+      }
+
+      // 1. Integrar com o Controle Financeiro: registrar automaticamente a Receita
+      await client.query(
+        `INSERT INTO crm_financial_transactions (
+            type, category, description, amount, payment_method, order_id, status, due_date, paid_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, NOW());`,
+        [
+          'receita',
+          'Vendas - Comanda',
+          `Venda #${orderCode} - ${data.customer_name}`,
+          totalAmount,
+          data.payment_method || 'pix',
+          order.id,
+          'pago',
+        ]
+      );
+
+      // 2. Se houver conversa associada, registrar na Timeline e atualizar valor negociado do lead
+      if (data.conversation_id) {
+        await client.query(
+          `UPDATE crm_conversations
+           SET deal_value = $1, lead_status = 'fechado', updated_at = NOW()
+           WHERE id = $2;`,
+          [`R$ ${totalAmount.toFixed(2).replace('.', ',')}`, data.conversation_id]
+        );
+
+        await client.query(
+          `INSERT INTO crm_events (conversation_id, event_type, title, description, metadata)
+           VALUES ($1, $2, $3, $4, $5);`,
+          [
+            data.conversation_id,
+            'order_created',
+            `Comanda Gerada: #${orderCode} (R$ ${totalAmount.toFixed(2).replace('.', ',')})`,
+            `Itens: ${savedItems.map((i) => `${i.quantity}x ${i.product_name}`).join(', ')} | Entrega: ${data.delivery_method}`,
+            JSON.stringify({ order_id: order.id, order_code: orderCode, total: totalAmount }),
+          ]
+        );
+      }
+
+      await client.query('COMMIT');
+      client.release();
+      released = true;
+
+      return {
+        ...order,
+        items: savedItems,
+      };
+    } catch (err) {
+      if (!released) {
+        try { await client.query('ROLLBACK'); } catch {}
+        client.release();
+      }
+      throw err;
+    }
+  }
+
+  async listOrders(filter: {
+    conversation_id?: number;
+    search?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ orders: CrmOrder[]; total: number }> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+
+    try {
+      const conditions: string[] = [];
+      const params: any[] = [];
+      let idx = 1;
+
+      if (filter.conversation_id) {
+        conditions.push(`o.conversation_id = $${idx++}`);
+        params.push(filter.conversation_id);
+      }
+
+      if (filter.status && filter.status !== 'all') {
+        conditions.push(`o.status = $${idx++}`);
+        params.push(filter.status);
+      }
+
+      if (filter.search && filter.search.trim()) {
+        conditions.push(`(o.order_code ILIKE $${idx} OR o.customer_name ILIKE $${idx} OR o.customer_phone ILIKE $${idx})`);
+        params.push(`%${filter.search.trim()}%`);
+        idx++;
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const countRes = await client.query(`SELECT COUNT(*) FROM crm_orders o ${whereClause};`, params);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const limit = filter.limit || 50;
+      const offset = filter.offset || 0;
+      params.push(limit, offset);
+
+      const ordersRes = await client.query(
+        `SELECT o.*,
+                COALESCE(
+                  (SELECT json_agg(i.*) FROM crm_order_items i WHERE i.order_id = o.id),
+                  '[]'::json
+                ) as items
+         FROM crm_orders o
+         ${whereClause}
+         ORDER BY o.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++};`,
+        params
+      );
+
+      return {
+        orders: ordersRes.rows.map(r => ({
+          ...r,
+          shipping_fee: Number(r.shipping_fee),
+          subtotal: Number(r.subtotal),
+          discount: Number(r.discount),
+          total_amount: Number(r.total_amount),
+          installment_amount: Number(r.installment_amount),
+        })),
+        total,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async getOrderById(id: number): Promise<CrmOrder | null> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    try {
+      const res = await client.query(
+        `SELECT o.*,
+                COALESCE(
+                  (SELECT json_agg(i.*) FROM crm_order_items i WHERE i.order_id = o.id),
+                  '[]'::json
+                ) as items
+         FROM crm_orders o
+         WHERE o.id = $1;`,
+        [id]
+      );
+      if (res.rows.length === 0) return null;
+      const r = res.rows[0];
+      return {
+        ...r,
+        shipping_fee: Number(r.shipping_fee),
+        subtotal: Number(r.subtotal),
+        discount: Number(r.discount),
+        total_amount: Number(r.total_amount),
+        installment_amount: Number(r.installment_amount),
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // ==========================================
+  // CONTROLE FINANCEIRO
+  // ==========================================
+
+  async createFinancialTransaction(data: CreateFinancialTransactionInput): Promise<CrmFinancialTransaction> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    try {
+      const amount = Number(data.amount) || 0;
+      const res = await client.query(
+        `INSERT INTO crm_financial_transactions (
+            type, category, description, amount, payment_method, order_id, status, due_date, paid_at, notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *;`,
+        [
+          data.type,
+          data.category.trim(),
+          data.description.trim(),
+          amount,
+          data.payment_method || 'pix',
+          data.order_id || null,
+          data.status || 'pago',
+          data.due_date || new Date().toISOString().split('T')[0],
+          data.status === 'pago' ? new Date() : null,
+          data.notes?.trim() || null,
+        ]
+      );
+      const r = res.rows[0];
+      return {
+        ...r,
+        amount: Number(r.amount),
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async listFinancialTransactions(filter: {
+    type?: string;
+    category?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<{ transactions: CrmFinancialTransaction[]; total: number }> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+
+    try {
+      const conditions: string[] = [];
+      const params: any[] = [];
+      let idx = 1;
+
+      if (filter.type && filter.type !== 'all') {
+        conditions.push(`t.type = $${idx++}`);
+        params.push(filter.type);
+      }
+
+      if (filter.category && filter.category !== 'all') {
+        conditions.push(`t.category = $${idx++}`);
+        params.push(filter.category);
+      }
+
+      if (filter.status && filter.status !== 'all') {
+        conditions.push(`t.status = $${idx++}`);
+        params.push(filter.status);
+      }
+
+      if (filter.start_date) {
+        conditions.push(`t.due_date >= $${idx++}`);
+        params.push(filter.start_date);
+      }
+
+      if (filter.end_date) {
+        conditions.push(`t.due_date <= $${idx++}`);
+        params.push(filter.end_date);
+      }
+
+      if (filter.search && filter.search.trim()) {
+        conditions.push(`(t.description ILIKE $${idx} OR t.category ILIKE $${idx} OR t.payment_method ILIKE $${idx})`);
+        params.push(`%${filter.search.trim()}%`);
+        idx++;
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const countRes = await client.query(`SELECT COUNT(*) FROM crm_financial_transactions t ${whereClause};`, params);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const limit = filter.limit || 100;
+      const offset = filter.offset || 0;
+      params.push(limit, offset);
+
+      const res = await client.query(
+        `SELECT t.*,
+                o.order_code as order_code,
+                o.customer_name as order_customer_name
+         FROM crm_financial_transactions t
+         LEFT JOIN crm_orders o ON o.id = t.order_id
+         ${whereClause}
+         ORDER BY t.due_date DESC, t.id DESC
+         LIMIT $${idx++} OFFSET $${idx++};`,
+        params
+      );
+
+      return {
+        transactions: res.rows.map(r => ({
+          ...r,
+          amount: Number(r.amount),
+        })),
+        total,
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteFinancialTransaction(id: number): Promise<boolean> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    try {
+      const res = await client.query(`DELETE FROM crm_financial_transactions WHERE id = $1;`, [id]);
+      return (res.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getFinancialSummary(): Promise<FinancialSummary> {
+    await this.ensureCrmTablesExist();
+    const client = await pool.connect();
+    try {
+      const res = await client.query(`
+        SELECT
+          COALESCE(SUM(CASE WHEN type = 'receita' AND status = 'pago' THEN amount ELSE 0 END), 0) as total_income,
+          COALESCE(SUM(CASE WHEN type = 'despesa' AND status = 'pago' THEN amount ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(CASE WHEN type = 'receita' AND status = 'pendente' THEN amount ELSE 0 END), 0) as pending_income,
+          COALESCE(SUM(CASE WHEN type = 'despesa' AND status = 'pendente' THEN amount ELSE 0 END), 0) as pending_expenses,
+          COUNT(*) as recent_count
+        FROM crm_financial_transactions;
+      `);
+
+      const row = res.rows[0];
+      const totalIncome = Number(row.total_income);
+      const totalExpenses = Number(row.total_expenses);
+
+      return {
+        balance: totalIncome - totalExpenses,
+        total_income: totalIncome,
+        total_expenses: totalExpenses,
+        pending_income: Number(row.pending_income),
+        pending_expenses: Number(row.pending_expenses),
+        recent_count: parseInt(row.recent_count, 10),
+      };
     } finally {
       client.release();
     }
