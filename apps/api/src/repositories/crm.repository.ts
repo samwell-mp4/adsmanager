@@ -71,8 +71,75 @@ export class CrmRepository {
         CREATE INDEX IF NOT EXISTS idx_crm_msg_conv ON crm_messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_crm_queue_status ON crm_outgoing_queue(status, profile_id);
       `);
+
+      // Migração e Limpeza de Clientes Duplicados:
+      // 1. Remover índice antigo que permitia duplicação com profile_id diferente
+      await client.query(`DROP INDEX IF EXISTS uq_crm_conv_plat_ext_prof;`);
+
+      // 2. Limpar mensagens de sistema/lixo do Facebook
+      await client.query(`
+        DELETE FROM crm_conversations 
+        WHERE customer_name ILIKE '%Parece que publicaste este anúncio%'
+           OR customer_name ILIKE '%Pedido de mensagem%'
+           OR customer_name ILIKE '%Ativo agora%';
+      `);
+
+      // 3. Mesclar e unificar conversas duplicadas por (platform, external_id)
+      const extDups = await client.query(`
+        SELECT platform, external_id, ARRAY_AGG(id ORDER BY (product_title IS NOT NULL) DESC, (customer_name NOT IN ('Cliente', 'Cliente Facebook', 'Cliente Atual', 'Pedido de mensagem')) DESC, updated_at DESC, id DESC) as ids
+        FROM crm_conversations
+        GROUP BY platform, external_id
+        HAVING COUNT(*) > 1
+      `);
+      for (const row of extDups.rows) {
+        const ids: number[] = row.ids;
+        const primaryId = ids[0];
+        const dupIds = ids.slice(1);
+        for (const dupId of dupIds) {
+          await client.query(`UPDATE crm_messages SET conversation_id = $1 WHERE conversation_id = $2`, [primaryId, dupId]);
+          await client.query(`UPDATE crm_outgoing_queue SET conversation_id = $1 WHERE conversation_id = $2`, [primaryId, dupId]);
+          await client.query(`DELETE FROM crm_conversations WHERE id = $1`, [dupId]);
+        }
+      }
+
+      // 4. Mesclar conversas duplicadas pelo mesmo nome de cliente na mesma plataforma
+      const nameDups = await client.query(`
+        SELECT platform, LOWER(TRIM(customer_name)) as norm_name, ARRAY_AGG(id ORDER BY (product_title IS NOT NULL) DESC, updated_at DESC, id DESC) as ids
+        FROM crm_conversations
+        WHERE LOWER(TRIM(customer_name)) NOT IN ('cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora', '')
+          AND LENGTH(TRIM(customer_name)) >= 3
+        GROUP BY platform, LOWER(TRIM(customer_name))
+        HAVING COUNT(*) > 1
+      `);
+      for (const row of nameDups.rows) {
+        const ids: number[] = row.ids;
+        const primaryId = ids[0];
+        const dupIds = ids.slice(1);
+        for (const dupId of dupIds) {
+          await client.query(`
+            UPDATE crm_conversations
+            SET
+              product_title = COALESCE(crm_conversations.product_title, (SELECT product_title FROM crm_conversations WHERE id = $2)),
+              product_price = COALESCE(crm_conversations.product_price, (SELECT product_price FROM crm_conversations WHERE id = $2)),
+              product_image = COALESCE(crm_conversations.product_image, (SELECT product_image FROM crm_conversations WHERE id = $2)),
+              customer_avatar = COALESCE(crm_conversations.customer_avatar, (SELECT customer_avatar FROM crm_conversations WHERE id = $2))
+            WHERE id = $1
+          `, [primaryId, dupId]);
+
+          await client.query(`UPDATE crm_messages SET conversation_id = $1 WHERE conversation_id = $2`, [primaryId, dupId]);
+          await client.query(`UPDATE crm_outgoing_queue SET conversation_id = $1 WHERE conversation_id = $2`, [primaryId, dupId]);
+          await client.query(`DELETE FROM crm_conversations WHERE id = $1`, [dupId]);
+        }
+      }
+
+      // 5. Criar índice único absoluto por (platform, external_id)
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_conv_plat_ext
+        ON crm_conversations (platform, external_id);
+      `);
+
       tablesInitialized = true;
-      console.log('[CrmRepository] CRM database tables and indexes verified successfully.');
+      console.log('[CrmRepository] CRM database tables, unique constraints, and deduplication verified.');
     } catch (err: any) {
       console.error('[CrmRepository] Error verifying CRM tables:', err.message);
       throw err;
@@ -101,6 +168,61 @@ export class CrmRepository {
     await this.ensureCrmTablesExist();
     const client = await pool.connect();
     try {
+      const cleanName = (data.customer_name || '').trim();
+      const isGenericName = !cleanName || ['cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora'].includes(cleanName.toLowerCase());
+
+      // 1. Se for um cliente com nome específico real, verificar se já existe conversa com ele nesta plataforma
+      if (!isGenericName && cleanName.length >= 3) {
+        const matchRes = await client.query(`
+          SELECT id, external_id, customer_name, product_title FROM crm_conversations 
+          WHERE platform = $1 
+            AND LOWER(TRIM(customer_name)) = LOWER(TRIM($2))
+            AND (
+              $3::TEXT IS NULL 
+              OR product_title IS NULL 
+              OR LOWER(TRIM(product_title)) = LOWER(TRIM($3))
+            )
+          ORDER BY (external_id = $4) DESC, (product_title IS NOT NULL) DESC, updated_at DESC
+          LIMIT 1
+        `, [data.platform, cleanName, data.product_title || null, data.external_id]);
+
+        if (matchRes.rows.length > 0) {
+          const existing = matchRes.rows[0];
+          const updateRes = await client.query(`
+            UPDATE crm_conversations SET
+              profile_id = CASE WHEN $1 > 0 THEN $1 ELSE profile_id END,
+              external_id = COALESCE($2, external_id),
+              customer_name = $3,
+              customer_avatar = COALESCE($4, customer_avatar),
+              product_title = COALESCE(crm_conversations.product_title, $5),
+              product_price = COALESCE(crm_conversations.product_price, $6),
+              product_image = COALESCE(crm_conversations.product_image, $7),
+              product_url = COALESCE(crm_conversations.product_url, $8),
+              last_message = COALESCE($9, last_message),
+              last_message_at = COALESCE($10, last_message_at),
+              unread_count = CASE WHEN $11 > 0 THEN $11 ELSE unread_count END,
+              updated_at = NOW()
+            WHERE id = $12
+            RETURNING *;
+          `, [
+            data.profile_id || 0,
+            data.external_id,
+            cleanName,
+            data.customer_avatar || null,
+            data.product_title || null,
+            data.product_price || null,
+            data.product_image || null,
+            data.product_url || null,
+            data.last_message || null,
+            data.last_message_at || null,
+            data.unread_count || 0,
+            existing.id
+          ]);
+          return updateRes.rows[0];
+        }
+      }
+
+      // 2. Upsert unificado e único por (platform, external_id)
       const query = `
         INSERT INTO crm_conversations (
           profile_id, platform, external_id, customer_name, customer_avatar,
@@ -109,9 +231,14 @@ export class CrmRepository {
         ) VALUES (
           COALESCE($1, 0), $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()), COALESCE($12, 0), NOW()
         )
-        ON CONFLICT (platform, external_id, profile_id)
+        ON CONFLICT (platform, external_id)
         DO UPDATE SET
-          customer_name = EXCLUDED.customer_name,
+          profile_id = CASE WHEN EXCLUDED.profile_id > 0 THEN EXCLUDED.profile_id ELSE crm_conversations.profile_id END,
+          customer_name = CASE 
+            WHEN EXCLUDED.customer_name NOT IN ('Cliente', 'Cliente Facebook', 'Cliente Atual', 'Pedido de mensagem', 'Ativo agora') 
+            THEN EXCLUDED.customer_name 
+            ELSE crm_conversations.customer_name 
+          END,
           customer_avatar = COALESCE(EXCLUDED.customer_avatar, crm_conversations.customer_avatar),
           product_title = COALESCE(EXCLUDED.product_title, crm_conversations.product_title),
           product_price = COALESCE(EXCLUDED.product_price, crm_conversations.product_price),
@@ -128,7 +255,7 @@ export class CrmRepository {
         data.profile_id || 0,
         data.platform,
         data.external_id,
-        data.customer_name || 'Cliente',
+        cleanName || 'Cliente',
         data.customer_avatar || null,
         data.product_title || null,
         data.product_price || null,

@@ -165,6 +165,16 @@ function scrapeFacebook() {
         }
       }
 
+      // Ignora avisos do sistema do Facebook e prompts automáticos
+      const lowerName = customerName.toLowerCase();
+      if (
+        lowerName.includes('parece que publicaste') ||
+        lowerName.includes('pedido de mensagem') ||
+        lowerName === 'ativo agora'
+      ) {
+        continue;
+      }
+
       // Se ainda não tiver nome ou título, busca nos elementos de texto visíveis
       if (customerName === 'Cliente Facebook' || !productTitle) {
         const titleSpan = link.querySelector('span.xlyipyv, span.x1lliihq');
@@ -308,7 +318,41 @@ function scrapeFacebook() {
     }
   }
 
-  return conversations;
+  // Unifica e deduplica conversas na memória antes de despachar
+  const uniqueConvs = [];
+  const seenLeadKeys = new Set();
+  for (const c of conversations) {
+    if (c.customer_name === 'Cliente Atual' && (!c.messages || c.messages.length === 0)) {
+      continue;
+    }
+    const normName = (c.customer_name || '').trim().toLowerCase();
+    const isGeneric = ['cliente', 'cliente facebook', 'cliente atual', 'pedido de mensagem', 'ativo agora'].includes(normName);
+    const key = (!isGeneric && normName.length >= 3)
+      ? normName + '_' + (c.product_title || '').trim().toLowerCase()
+      : c.external_id;
+
+    if (!seenLeadKeys.has(key)) {
+      seenLeadKeys.add(key);
+      uniqueConvs.push(c);
+    } else {
+      const existing = uniqueConvs.find(item => {
+        const itemNorm = (item.customer_name || '').trim().toLowerCase();
+        const itemKey = (!isGeneric && itemNorm.length >= 3)
+          ? itemNorm + '_' + (item.product_title || '').trim().toLowerCase()
+          : item.external_id;
+        return itemKey === key;
+      });
+      if (existing) {
+        if (c.messages && c.messages.length > 0) {
+          existing.messages = (existing.messages || []).concat(c.messages);
+        }
+        if (!existing.product_title && c.product_title) existing.product_title = c.product_title;
+        if (!existing.product_price && c.product_price) existing.product_price = c.product_price;
+      }
+    }
+  }
+
+  return uniqueConvs;
 }
 
 // 3. Parser da OLX

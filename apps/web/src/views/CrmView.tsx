@@ -102,17 +102,56 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     }
   };
 
+  // Helper to ensure 100% unique clients/leads in UI
+  const deduplicateConversations = (list: any[]): any[] => {
+    if (!list || !Array.isArray(list)) return [];
+    const map = new Map<string, any>();
+
+    for (const conv of list) {
+      const name = (conv.customer_name || '').trim();
+      const lower = name.toLowerCase();
+      if (
+        lower.includes('parece que publicaste') ||
+        lower.includes('pedido de mensagem') ||
+        lower === 'ativo agora'
+      ) {
+        continue;
+      }
+
+      const isGeneric = !name || ['cliente', 'cliente facebook', 'cliente atual'].includes(lower);
+      const key = (!isGeneric && lower.length >= 3)
+        ? `${conv.platform || 'facebook'}_${lower}`
+        : `${conv.platform || 'facebook'}_${conv.external_id}`;
+
+      if (!map.has(key)) {
+        map.set(key, conv);
+      } else {
+        const existing = map.get(key);
+        const preferCurrent = (!existing.product_title && conv.product_title) ||
+          (new Date(conv.updated_at || conv.last_message_at || 0).getTime() > new Date(existing.updated_at || existing.last_message_at || 0).getTime());
+
+        if (preferCurrent) {
+          map.set(key, { ...existing, ...conv });
+        }
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
   // Fetch conversation list
   const fetchConversations = async (silent = false) => {
     if (!silent) setLoadingList(true);
     try {
-      const data = await api.getCrmConversations({
+      const rawData = await api.getCrmConversations({
         platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
         profile_id: selectedProfileId !== 'all' ? selectedProfileId : undefined,
         lead_status: selectedStatus !== 'all' ? selectedStatus : undefined,
         search: searchTerm.trim() ? searchTerm.trim() : undefined,
         marketplace_only: marketplaceOnly,
       });
+
+      const data = deduplicateConversations(rawData || []);
 
       // Realtime notification detection
       if (initialLoadDone.current && data && Array.isArray(data)) {
@@ -144,7 +183,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         initialLoadDone.current = true;
       }
 
-      setConversations(data || []);
+      setConversations(data);
 
       // If nothing selected yet and on inbox tab, select first conversation
       if (!selectedId && data && data.length > 0 && currentTab === 'inbox') {
@@ -156,14 +195,15 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       if (err.message && (err.message.includes('relation') || err.message.includes('does not exist') || err.message.includes('500'))) {
         try {
           await api.initCrmTables();
-          const retryData = await api.getCrmConversations({
+          const retryRaw = await api.getCrmConversations({
             platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
             profile_id: selectedProfileId !== 'all' ? selectedProfileId : undefined,
             lead_status: selectedStatus !== 'all' ? selectedStatus : undefined,
             search: searchTerm.trim() ? searchTerm.trim() : undefined,
             marketplace_only: marketplaceOnly,
           });
-          setConversations(retryData || []);
+          const retryData = deduplicateConversations(retryRaw || []);
+          setConversations(retryData);
           if (!selectedId && retryData && retryData.length > 0) {
             setSelectedId(retryData[0].id);
           }
