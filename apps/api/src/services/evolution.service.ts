@@ -142,6 +142,7 @@ export class EvolutionService {
 
   /**
    * Enviar mídia (foto, vídeo ou documento) via WhatsApp (Evolution API)
+   * Suporta URLs públicas e conversão automática para base64 com detecção de mimetype
    */
   async sendMediaMessage(
     numberOrJid: string,
@@ -160,25 +161,104 @@ export class EvolutionService {
       return { success: false, error: 'Destinatário/Número inválido' };
     }
 
+    // Preparar metadados e mídia
+    let mediaPayload = (mediaUrl || '').trim();
+    let mimeType = 'image/jpeg';
+    let fileName = 'imagem.jpg';
+
+    if (mediaType === 'video') {
+      mimeType = 'video/mp4';
+      fileName = 'video.mp4';
+    } else if (mediaType === 'document') {
+      mimeType = 'application/pdf';
+      fileName = 'documento.pdf';
+    }
+
+    // Se for URL HTTP/HTTPS, converte para base64 para envio direto sem bloqueios de CDN/CORS
+    if (mediaPayload.startsWith('http://') || mediaPayload.startsWith('https://')) {
+      try {
+        console.log(`[Evolution] Baixando imagem para conversão em base64: ${mediaPayload}`);
+        const resp = await fetch(mediaPayload, {
+          signal: AbortSignal.timeout(12000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/*,video/*,*/*',
+          },
+        });
+
+        if (resp.ok) {
+          const contentType = resp.headers.get('content-type');
+          if (contentType) {
+            mimeType = contentType.split(';')[0].trim();
+          }
+          const arrayBuf = await resp.arrayBuffer();
+          const base64Str = Buffer.from(arrayBuf).toString('base64');
+          mediaPayload = `data:${mimeType};base64,${base64Str}`;
+
+          const ext = mimeType.split('/')[1] || (mediaType === 'video' ? 'mp4' : 'jpg');
+          fileName = `produto.${ext.replace('+xml', '')}`;
+          console.log(`[Evolution] Mídia convertida com sucesso (${base64Str.length} chars base64, mime: ${mimeType})`);
+        } else {
+          console.warn(`[Evolution] Falha HTTP ${resp.status} ao baixar mídia, enviando URL direta`);
+        }
+      } catch (err: any) {
+        console.warn('[Evolution] Erro ao converter mídia para base64, enviando URL direta:', err.message);
+      }
+    } else if (mediaPayload.startsWith('data:')) {
+      const match = mediaPayload.match(/^data:([^;]+);base64,/);
+      if (match) {
+        mimeType = match[1];
+        const ext = mimeType.split('/')[1] || 'jpg';
+        fileName = `produto.${ext.replace('+xml', '')}`;
+      }
+    }
+
     try {
+      const bodyPayload: any = {
+        number: recipient,
+        mediatype: mediaType,
+        mimetype: mimeType,
+        caption: caption || '',
+        media: mediaPayload,
+        fileName: fileName,
+        delay: 1000,
+      };
+
       const response = await fetch(url, {
         method: 'POST',
         headers: this.headers,
-        body: JSON.stringify({
-          number: recipient,
-          mediatype: mediaType,
-          media: mediaUrl,
-          caption: caption || '',
-          delay: 1000,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
 
       const resData: any = await response.json().catch(() => ({}));
       if (!response.ok) {
         console.error('[Evolution] Erro no envio de mídia:', resData);
+
+        // Fallback: se com data URI falhou, tenta com raw base64 puro (sem o prefixo data:...)
+        if (mediaPayload.startsWith('data:') && mediaPayload.includes(';base64,')) {
+          const rawBase64 = mediaPayload.split(';base64,')[1];
+          try {
+            console.log('[Evolution] Tentando fallback com base64 puro...');
+            const retryResp = await fetch(url, {
+              method: 'POST',
+              headers: this.headers,
+              body: JSON.stringify({
+                ...bodyPayload,
+                media: rawBase64,
+              }),
+            });
+            const retryData: any = await retryResp.json().catch(() => ({}));
+            if (retryResp.ok) {
+              return { success: true, data: retryData };
+            }
+          } catch {}
+        }
+
         let errorMsg = 'Falha no envio de mídia no WhatsApp';
         if (typeof resData?.response?.message === 'string') {
           errorMsg = resData.response.message;
+        } else if (Array.isArray(resData?.response?.message)) {
+          errorMsg = resData.response.message.map((m: any) => m.message || m.jid || JSON.stringify(m)).join(', ');
         } else if (resData?.message) {
           errorMsg = typeof resData.message === 'string' ? resData.message : JSON.stringify(resData.message);
         }

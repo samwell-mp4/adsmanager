@@ -880,7 +880,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const handleInsertProductPitch = (product: any, variant?: any, sendDirect = false) => {
     const pitch = generateProductPitch(product, variant);
     if (sendDirect) {
-      handleSendReply(pitch);
+      const imgToSend = product.main_image || product.image_url || (product.media && product.media[0]?.url);
+      handleSendReply(pitch, imgToSend || undefined);
     } else {
       setReplyText(pitch);
       setFeedback({ type: 'success', message: `Proposta de "${product.name}" inserida no campo de resposta!` });
@@ -889,7 +890,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   };
 
   const handleSendProductPhoto = async (product: any, imageUrl?: string) => {
-    const imgToSend = imageUrl || product.main_image || (product.media && product.media[0]?.url);
+    const imgToSend = imageUrl || product.main_image || product.image_url || (product.media && product.media[0]?.url);
     if (!imgToSend) {
       setFeedback({ type: 'error', message: 'Este produto não possui imagem para envio.' });
       return;
@@ -899,7 +900,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     setSendingReply(true);
     try {
       const priceVal = product.promotional_price || product.price || 0;
-      const caption = `✨ ${product.name} - R$ ${Number(priceVal).toFixed(2).replace('.', ',')}`;
+      const caption = `✨ *${product.name}* - R$ ${Number(priceVal).toFixed(2).replace('.', ',')}`;
       const res = await api.sendCrmReply(selectedId, caption, imgToSend);
       setFeedback({ type: 'success', message: res.message || 'Foto do produto enviada com sucesso!' });
       await fetchThread(selectedId, true);
@@ -4661,8 +4662,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     >
                       <div className="flex gap-2.5">
                         <div className="h-14 w-14 rounded-lg bg-slate-100 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center">
-                          {prod.image_url ? (
-                            <img src={prod.image_url} alt={prod.name} className="h-full w-full object-cover" />
+                          {(prod.main_image || prod.image_url) ? (
+                            <img src={prod.main_image || prod.image_url} alt={prod.name} className="h-full w-full object-cover" />
                           ) : (
                             <Package className="h-6 w-6 text-slate-300" />
                           )}
