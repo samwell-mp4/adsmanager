@@ -22,16 +22,16 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div className="min-h-screen bg-background flex selection:bg-blue-600 selection:text-white">
+        <div className="h-screen w-screen bg-background flex selection:bg-blue-600 selection:text-white overflow-hidden">
           <Sidebar />
-          <main className="flex-1 min-w-0 overflow-y-auto max-h-screen">
+          <main className="flex-1 min-w-0 h-full overflow-hidden flex flex-col">
             <Routes>
-              <Route path="/" element={<ProfilesPage />} />
+              <Route path="/" element={<div className="h-full overflow-y-auto"><ProfilesPage /></div>} />
               <Route path="/crm" element={<CrmPage />} />
-              <Route path="/profiles/:id" element={<ProfileDetailPage />} />
-              <Route path="/proxies" element={<ProxiesPage />} />
-              <Route path="/extensions" element={<ExtensionsPage />} />
-              <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/profiles/:id" element={<div className="h-full overflow-y-auto"><ProfileDetailPage /></div>} />
+              <Route path="/proxies" element={<div className="h-full overflow-y-auto"><ProxiesPage /></div>} />
+              <Route path="/extensions" element={<div className="h-full overflow-y-auto"><ExtensionsPage /></div>} />
+              <Route path="/groups" element={<div className="h-full overflow-y-auto"><GroupsPage /></div>} />
             </Routes>
           </main>
         </div>

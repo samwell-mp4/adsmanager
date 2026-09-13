@@ -215,9 +215,9 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden w-full max-w-full">
       {/* Top Header Controls */}
-      <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-between gap-4">
+      <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex flex-wrap items-center justify-between gap-4 shrink-0">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20">
             <MessageSquare className="h-5 w-5" />
@@ -237,7 +237,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         </div>
 
         {/* Global Filters & Polling Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Platform Filter */}
           <div className="flex bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/60 text-xs">
             <button
@@ -316,7 +316,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
             onClick={handleTestN8nWebhook}
             disabled={testingWebhook}
             className="px-3 py-1.5 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-            title="Disparar um evento de teste diretamente para o webhook do n8n (https://plug-sales-dispatch-app-n8n-2.hx8235.easypanel.host/webhook/adsmanager)"
+            title="Disparar um evento de teste diretamente para o webhook do n8n"
           >
             <span>📡</span>
             <span className="hidden sm:inline">{testingWebhook ? 'Testando n8n...' : 'Testar Webhook n8n'}</span>
@@ -338,7 +338,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       {/* Global Feedback Banner */}
       {feedback && (
         <div
-          className={`mx-6 mt-3 p-3 rounded-xl text-xs flex items-center justify-between gap-3 shadow-lg transition-all animate-fadeIn ${
+          className={`mx-6 mt-3 p-3 rounded-xl text-xs flex items-center justify-between gap-3 shadow-lg transition-all animate-fadeIn shrink-0 ${
             feedback.type === 'success'
               ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
               : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
@@ -358,11 +358,30 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       )}
 
       {/* 3-Column Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
         {/* Left Column: Conversations List */}
-        <div className="w-80 md:w-96 border-r border-slate-800 flex flex-col bg-slate-900/40">
+        <div className="w-80 md:w-96 shrink-0 flex-shrink-0 min-w-[320px] max-w-[380px] border-r border-slate-800 flex flex-col bg-slate-900/50 min-h-0 z-10">
+          {/* Inbox Header with Total Count */}
+          <div className="px-4 py-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/80 shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-blue-400" />
+              <span className="text-xs font-bold text-slate-200">Caixa de Entrada</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold border border-blue-500/30">
+                {conversations.length}
+              </span>
+            </div>
+            <button
+              onClick={() => fetchConversations()}
+              disabled={loadingList}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Atualizar conversas"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingList ? 'animate-spin text-blue-400' : ''}`} />
+            </button>
+          </div>
+
           {/* Search Box */}
-          <div className="p-3 border-b border-slate-800/80">
+          <div className="p-3 border-b border-slate-800/80 shrink-0">
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
@@ -477,11 +496,11 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         </div>
 
         {/* Center Column: Active Chat Thread */}
-        <div className="flex-1 flex flex-col bg-slate-950">
+        <div className="flex-1 min-w-0 flex flex-col bg-slate-950 min-h-0">
           {activeThread ? (
             <>
               {/* Thread Header */}
-              <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between gap-4">
+              <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between gap-4 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-10 w-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 shrink-0 border border-slate-700">
                     {activeThread.conversation.customer_avatar ? (
@@ -510,7 +529,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                     {activeThread.conversation.product_title && (
                       <p className="text-xs text-blue-400 font-medium truncate flex items-center gap-1">
                         <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
-                        <span>{activeThread.conversation.product_title}</span>
+                        <span className="truncate">{activeThread.conversation.product_title}</span>
                       </p>
                     )}
                   </div>
@@ -550,7 +569,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               {/* Feedback Alert */}
               {feedback && (
                 <div
-                  className={`mx-6 mt-2 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                  className={`mx-6 mt-2 p-2.5 rounded-xl text-xs flex items-center gap-2 shrink-0 ${
                     feedback.type === 'success'
                       ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
                       : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
@@ -561,8 +580,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 </div>
               )}
 
-              {/* Messages Feed */}
-              <div className="flex-1 p-6 overflow-y-auto space-y-4">
+              {/* Chat Messages Stream */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-4 min-h-0">
                 {loadingThread ? (
                   <div className="py-20 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
                     <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
@@ -617,7 +636,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               </div>
 
               {/* Quick Reply Templates Bar */}
-              <div className="px-6 py-2 border-t border-slate-800/60 bg-slate-900/30 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="px-4 py-2 border-t border-slate-800/60 bg-slate-900/30 flex items-center gap-2 overflow-x-auto min-w-0 max-w-full shrink-0">
                 <span className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 shrink-0">
                   <Sparkles className="h-3 w-3 text-amber-400" />
                   Respostas Rápidas:
@@ -635,7 +654,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
               </div>
 
               {/* Reply Input Bar */}
-              <div className="p-4 border-t border-slate-800 bg-slate-900/80 flex items-end gap-3">
+              <div className="p-4 border-t border-slate-800 bg-slate-900/80 flex items-end gap-3 shrink-0">
                 <textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
@@ -652,7 +671,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 <button
                   onClick={() => handleSendReply()}
                   disabled={sendingReply || !replyText.trim()}
-                  className="px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-blue-600/25"
+                  className="px-5 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-blue-600/25 shrink-0"
                 >
                   {sendingReply ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
@@ -676,7 +695,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
         {/* Right Column: Lead & Product Details */}
         {activeThread && (
-          <div className="w-72 border-l border-slate-800 bg-slate-900/30 p-5 overflow-y-auto space-y-6 hidden lg:block">
+          <div className="w-72 shrink-0 flex-shrink-0 min-w-[280px] border-l border-slate-800 bg-slate-900/30 p-5 overflow-y-auto space-y-6 hidden xl:block min-h-0">
             {/* Product Card */}
             {activeThread.conversation.product_title && (
               <div className="space-y-2">
