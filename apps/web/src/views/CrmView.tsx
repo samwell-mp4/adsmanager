@@ -1589,7 +1589,11 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                             {conv.next_followup && (
                               <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-semibold flex items-center gap-1" title={conv.next_followup.notes || 'Follow-up agendado'}>
                                 <Clock className="h-2.5 w-2.5 text-amber-600" />
-                                {new Date(conv.next_followup.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
+                                {(() => {
+                                  const raw = conv.next_followup.scheduled_at || conv.next_followup.due_at;
+                                  const d = raw ? new Date(raw) : null;
+                                  return d && !isNaN(d.getTime()) ? d.toLocaleDateString([], { day: '2-digit', month: '2-digit' }) : 'Agendado';
+                                })()}
                               </span>
                             )}
                           </div>
@@ -2098,16 +2102,23 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                       {(() => {
                         const nextF = leadFollowups.find((f) => f.status === 'pending');
                         if (nextF) {
-                          const dueDate = new Date(nextF.due_at);
-                          const isOverdue = dueDate.getTime() < Date.now();
+                          const raw = nextF.scheduled_at || nextF.due_at;
+                          const dueDate = raw ? new Date(raw) : null;
+                          const isValid = dueDate && !isNaN(dueDate.getTime());
+                          const isOverdue = isValid ? dueDate.getTime() < Date.now() : false;
+                          const flType = nextF.followup_type || nextF.type || 'WhatsApp';
+                          const dateFormatted = isValid
+                            ? `${dueDate.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} • ${dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                            : 'Data a definir';
+
                           return (
                             <div className="space-y-2">
                               <div className="flex items-baseline justify-between">
                                 <span className={`text-xs font-bold ${isOverdue ? 'text-rose-600' : 'text-slate-800'}`}>
-                                  {dueDate.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} • {dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {dateFormatted}
                                 </span>
                                 <span className="text-[10px] text-amber-700 font-semibold capitalize">
-                                  {nextF.type}
+                                  {flType}
                                 </span>
                               </div>
                               {nextF.notes && (
@@ -2349,7 +2360,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                       <div className="space-y-2">
                         {leadFollowups.map((f) => {
                           const isDone = f.status === 'completed';
-                          const isOverdue = !isDone && new Date(f.due_at).getTime() < Date.now();
+                          const raw = f.scheduled_at || f.due_at;
+                          const dueDate = raw ? new Date(raw) : null;
+                          const isValid = dueDate && !isNaN(dueDate.getTime());
+                          const isOverdue = !isDone && isValid && dueDate.getTime() < Date.now();
+                          const flType = f.followup_type || f.type || 'WhatsApp';
+                          const dateFormatted = isValid
+                            ? `${dueDate.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} às ${dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                            : 'Data a definir';
 
                           return (
                             <div
@@ -2365,7 +2383,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-bold text-slate-800 capitalize flex items-center gap-1.5">
                                   <Clock className={`h-3 w-3 ${isOverdue ? 'text-rose-600' : 'text-amber-600'}`} />
-                                  {f.type}
+                                  {flType}
                                 </span>
                                 <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
                                   isDone
@@ -2379,7 +2397,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                               </div>
 
                               <div className="text-[11px] text-slate-600 font-medium">
-                                📅 {new Date(f.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })} às {new Date(f.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                📅 {dateFormatted}
                               </div>
 
                               {f.notes && (
@@ -3767,7 +3785,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                 weekEnd.setDate(weekEnd.getDate() + 7);
 
                 const filtered = allFollowups.filter((f) => {
-                  const dueDate = new Date(f.due_at);
+                  const raw = f.scheduled_at || f.due_at;
+                  const dueDate = raw ? new Date(raw) : new Date();
                   const isPending = f.status === 'pending';
 
                   if (globalFollowupFilter === 'concluidos') return f.status === 'completed';
@@ -3791,7 +3810,14 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
 
                 return filtered.map((fl) => {
                   const isDone = fl.status === 'completed';
-                  const isOverdue = !isDone && new Date(fl.due_at).getTime() < now;
+                  const raw = fl.scheduled_at || fl.due_at;
+                  const dueDate = raw ? new Date(raw) : null;
+                  const isValid = dueDate && !isNaN(dueDate.getTime());
+                  const isOverdue = !isDone && isValid && dueDate.getTime() < now;
+                  const flType = fl.followup_type || fl.type || 'WhatsApp';
+                  const dateFormatted = isValid
+                    ? `${dueDate.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} às ${dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    : 'Data a definir';
 
                   return (
                     <div
@@ -3810,7 +3836,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                             {fl.customer_name || 'Cliente'}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-amber-100 text-amber-800 capitalize">
-                            {fl.type}
+                            {flType}
                           </span>
                           {isOverdue && (
                             <span className="text-[9px] px-1.5 py-0.2 rounded font-black bg-rose-500 text-white">
@@ -3820,7 +3846,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
                         </div>
                         <div className="text-[11px] text-slate-500 flex items-center gap-3">
                           <span>
-                            📅 {new Date(fl.due_at).toLocaleDateString([], { day: '2-digit', month: '2-digit' })} às {new Date(fl.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            📅 {dateFormatted}
                           </span>
                           {fl.customer_phone && <span>📞 {fl.customer_phone}</span>}
                         </div>

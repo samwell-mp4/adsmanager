@@ -656,7 +656,16 @@ export class CrmRepository {
         LEFT JOIN (
           SELECT DISTINCT ON (conversation_id) 
             conversation_id, 
-            json_build_object('id', id, 'scheduled_at', scheduled_at, 'followup_type', followup_type, 'priority', priority, 'notes', notes, 'status', status) as next_followup
+            json_build_object(
+              'id', id, 
+              'scheduled_at', scheduled_at, 
+              'due_at', scheduled_at, 
+              'followup_type', followup_type, 
+              'type', followup_type, 
+              'priority', priority, 
+              'notes', notes, 
+              'status', status
+            ) as next_followup
           FROM crm_followups
           WHERE status = 'pending'
           ORDER BY conversation_id, scheduled_at ASC
@@ -735,7 +744,16 @@ export class CrmRepository {
         LEFT JOIN (
           SELECT DISTINCT ON (conversation_id) 
             conversation_id, 
-            json_build_object('id', id, 'scheduled_at', scheduled_at, 'followup_type', followup_type, 'priority', priority, 'notes', notes, 'status', status) as next_followup
+            json_build_object(
+              'id', id, 
+              'scheduled_at', scheduled_at, 
+              'due_at', scheduled_at, 
+              'followup_type', followup_type, 
+              'type', followup_type, 
+              'priority', priority, 
+              'notes', notes, 
+              'status', status
+            ) as next_followup
           FROM crm_followups
           WHERE status = 'pending'
           ORDER BY conversation_id, scheduled_at ASC
@@ -1387,6 +1405,8 @@ export class CrmRepository {
       let query = `
         SELECT 
           f.*,
+          f.scheduled_at as due_at,
+          f.followup_type as type,
           c.customer_name,
           c.customer_phone,
           c.platform
@@ -1434,7 +1454,7 @@ export class CrmRepository {
     const client = await pool.connect();
     try {
       const res = await client.query(
-        `SELECT * FROM crm_followups WHERE conversation_id = $1 ORDER BY scheduled_at ASC;`,
+        `SELECT *, scheduled_at as due_at, followup_type as type FROM crm_followups WHERE conversation_id = $1 ORDER BY scheduled_at ASC;`,
         [conversationId]
       );
       return res.rows;
@@ -1482,7 +1502,11 @@ export class CrmRepository {
         ]
       );
 
-      return followup;
+      return {
+        ...followup,
+        due_at: followup.scheduled_at,
+        type: followup.followup_type,
+      };
     } finally {
       client.release();
     }
@@ -1546,7 +1570,13 @@ export class CrmRepository {
         }
       }
 
-      return followup;
+      return followup
+        ? {
+            ...followup,
+            due_at: followup.scheduled_at,
+            type: followup.followup_type,
+          }
+        : null;
     } finally {
       client.release();
     }
