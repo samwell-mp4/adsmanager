@@ -4,9 +4,16 @@ const RAW_API_URL = (import.meta as any).env?.VITE_API_URL || '';
 const API_BASE = RAW_API_URL ? `${RAW_API_URL.replace(/\/$/, '')}/api` : '/api';
 
 async function handleResponse<T>(res: Response): Promise<T> {
-  const json = await res.json();
+  let json: any;
+  try {
+    json = await res.json();
+  } catch {
+    json = { error: 'Falha ao processar resposta do servidor' };
+  }
   if (!res.ok || json.success === false) {
-    const message = json.error?.message || json.message || 'Erro inesperado na requisição';
+    const message = typeof json.error === 'string'
+      ? json.error
+      : (json.error?.message || json.message || (typeof json.error === 'object' ? JSON.stringify(json.error) : 'Erro inesperado na requisição'));
     throw new Error(message);
   }
   return json.data !== undefined ? json.data : json;
