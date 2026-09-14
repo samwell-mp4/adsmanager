@@ -87,7 +87,23 @@ export class CatalogService {
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw new Error('Nenhum item fornecido para importação.');
     }
+
     return catalogRepository.importProducts(items);
+  }
+
+  // ==========================================
+  // Supplier Inquiries
+  // ==========================================
+  async createSupplierInquiry(uuid: string, items: any[]): Promise<any> {
+    return catalogRepository.createSupplierInquiry(uuid, items);
+  }
+
+  async getSupplierInquiryByUuid(uuid: string): Promise<any> {
+    return catalogRepository.getSupplierInquiryByUuid(uuid);
+  }
+
+  async answerSupplierInquiry(uuid: string, answeredItems: any[]): Promise<any> {
+    return catalogRepository.answerSupplierInquiry(uuid, answeredItems);
   }
 }
 

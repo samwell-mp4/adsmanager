@@ -81,6 +81,17 @@ export class CatalogRepository {
 
         -- Garantir coluna whatsapp_catalog_link
         ALTER TABLE catalog_products ADD COLUMN IF NOT EXISTS whatsapp_catalog_link TEXT;
+
+        -- 5. Consultas ao Fornecedor
+        CREATE TABLE IF NOT EXISTS catalog_supplier_inquiries (
+            id SERIAL PRIMARY KEY,
+            uuid VARCHAR(100) UNIQUE NOT NULL,
+            items JSONB NOT NULL,
+            status VARCHAR(50) DEFAULT 'PENDING',
+            answered_items JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            answered_at TIMESTAMPTZ
+        );
       `);
 
       // Seed sample categories if empty
@@ -593,6 +604,36 @@ export class CatalogRepository {
     }
 
     return { imported, errors };
+  }
+
+  // ==========================================
+  // Supplier Inquiries
+  // ==========================================
+  async createSupplierInquiry(uuid: string, items: any[]): Promise<any> {
+    await this.ensureCatalogTablesExist();
+    const res = await pool.query(`
+      INSERT INTO catalog_supplier_inquiries (uuid, items, status)
+      VALUES ($1, $2::jsonb, 'PENDING')
+      RETURNING *
+    `, [uuid, JSON.stringify(items)]);
+    return res.rows[0];
+  }
+
+  async getSupplierInquiryByUuid(uuid: string): Promise<any> {
+    await this.ensureCatalogTablesExist();
+    const res = await pool.query('SELECT * FROM catalog_supplier_inquiries WHERE uuid = $1', [uuid]);
+    return res.rows[0] || null;
+  }
+
+  async answerSupplierInquiry(uuid: string, answeredItems: any[]): Promise<any> {
+    await this.ensureCatalogTablesExist();
+    const res = await pool.query(`
+      UPDATE catalog_supplier_inquiries
+      SET status = 'ANSWERED', answered_items = $1::jsonb, answered_at = NOW()
+      WHERE uuid = $2
+      RETURNING *
+    `, [JSON.stringify(answeredItems), uuid]);
+    return res.rows[0] || null;
   }
 }
 

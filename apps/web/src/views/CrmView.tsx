@@ -43,9 +43,11 @@ import {
   Layers,
   Truck,
   ArrowLeft,
+  Box,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
+import { SupplierInquiryModal } from '../components/SupplierInquiryModal.js';
 
 interface CrmViewProps {
   profiles: BrowserProfile[];
@@ -139,6 +141,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [shippingQuotes, setShippingQuotes] = useState<any[]>([]);
   const [shippingError, setShippingError] = useState<string | null>(null);
   const [showShippingModal, setShowShippingModal] = useState<boolean>(false);
+  const [isSupplierInquiryModalOpen, setIsSupplierInquiryModalOpen] = useState<boolean>(false);
   const [shippingModalCep, setShippingModalCep] = useState<string>('');
   const [shippingModalOrigin, setShippingModalOrigin] = useState<string>('30730130');
   const [shippingModalCustomOrigin, setShippingModalCustomOrigin] = useState<string>('');
@@ -2674,6 +2677,14 @@ ${quotesList}
                     >
                       <Truck className="h-3 w-3 text-blue-600" />
                       <span>Cotar Frete</span>
+                    </button>
+                    <button
+                      onClick={() => setIsSupplierInquiryModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      title="Consultar Fornecedor em Massa"
+                    >
+                      <Box className="h-3 w-3 text-indigo-600" />
+                      <span>Consultar Fornecedor</span>
                     </button>
                     <button
                       onClick={() => handleOpenCreateOrder()}

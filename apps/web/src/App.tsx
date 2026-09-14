@@ -11,6 +11,7 @@ import { GroupsPage } from './pages/GroupsPage.js';
 import { CrmPage } from './pages/CrmPage.js';
 import { CatalogPage } from './pages/CatalogPage.js';
 import { FinancePage } from './pages/FinancePage.js';
+import { SupplierInquiryPage } from './pages/SupplierInquiryPage.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +71,7 @@ export const App: React.FC = () => {
               <Route path="/proxies" element={<div className="h-full overflow-y-auto"><ProxiesPage /></div>} />
               <Route path="/extensions" element={<div className="h-full overflow-y-auto"><ExtensionsPage /></div>} />
               <Route path="/groups" element={<div className="h-full overflow-y-auto"><GroupsPage /></div>} />
+              <Route path="/fornecedor/:uuid" element={<div className="h-full overflow-y-auto"><SupplierInquiryPage /></div>} />
             </Routes>
           </main>
         </div>

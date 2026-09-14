@@ -11,7 +11,10 @@ import {
   deleteProductHandler,
   deleteAllProductsHandler,
   importProductsHandler,
-  uploadCatalogImageHandler
+  uploadCatalogImageHandler,
+  createSupplierInquiryHandler,
+  getSupplierInquiryHandler,
+  answerSupplierInquiryHandler
 } from '../controllers/catalog.controller.js';
 
 export async function catalogRoutes(fastify: FastifyInstance) {
@@ -52,4 +55,9 @@ export async function catalogRoutes(fastify: FastifyInstance) {
   for (const u of importUrls) {
     fastify.post(u, importProductsHandler);
   }
+
+  // Supplier Inquiries
+  fastify.post('/api/catalog/supplier-inquiry', createSupplierInquiryHandler);
+  fastify.get('/api/catalog/supplier-inquiry/:uuid', getSupplierInquiryHandler);
+  fastify.post('/api/catalog/supplier-inquiry/:uuid/answer', answerSupplierInquiryHandler);
 }

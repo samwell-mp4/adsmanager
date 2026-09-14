@@ -678,6 +678,33 @@ export const api = {
   },
 
   // ==========================================
+  // Supplier Inquiries
+  // ==========================================
+  
+  async createSupplierInquiry(items: any[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/supplier-inquiry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  async getSupplierInquiry(uuid: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/supplier-inquiry/${uuid}`);
+    return handleResponse<any>(res);
+  },
+
+  async answerSupplierInquiry(uuid: string, answeredItems: any[]): Promise<any> {
+    const res = await fetch(`${API_BASE}/catalog/supplier-inquiry/${uuid}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answeredItems }),
+    });
+    return handleResponse<any>(res);
+  },
+
+  // ==========================================
   // COMANDAS / PEDIDOS DE VENDA
   // ==========================================
 

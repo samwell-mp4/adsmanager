@@ -1,6 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { catalogService } from '../services/catalog.service.js';
-import { CreateProductInput } from '../types/index.js';
+import { CreateProductInput, ProductFilterOptions } from '../types/index.js';
+import { randomUUID } from 'crypto';
+import { evolutionService } from '../services/evolution.service.js';
 
 // ==========================================
 // Categorias
@@ -233,5 +235,81 @@ export async function uploadCatalogImageHandler(
     });
   } catch (err: any) {
     return reply.status(500).send({ success: false, message: 'Falha ao salvar imagem: ' + err.message });
+  }
+}
+
+// ==========================================
+// Supplier Inquiries
+// ==========================================
+
+export async function createSupplierInquiryHandler(
+  req: FastifyRequest<{ Body: { items: any[] } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { items } = req.body;
+    if (!items || !items.length) {
+      return reply.status(400).send({ success: false, message: 'Nenhum item fornecido.' });
+    }
+    const uuid = randomUUID();
+    const inquiry = await catalogService.createSupplierInquiry(uuid, items);
+    return reply.send({ success: true, inquiry });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+export async function getSupplierInquiryHandler(
+  req: FastifyRequest<{ Params: { uuid: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { uuid } = req.params;
+    const inquiry = await catalogService.getSupplierInquiryByUuid(uuid);
+    if (!inquiry) {
+      return reply.status(404).send({ success: false, message: 'Consulta não encontrada.' });
+    }
+    return reply.send({ success: true, inquiry });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
+export async function answerSupplierInquiryHandler(
+  req: FastifyRequest<{ Params: { uuid: string }, Body: { answeredItems: any[] } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { uuid } = req.params;
+    const { answeredItems } = req.body;
+    
+    const inquiry = await catalogService.getSupplierInquiryByUuid(uuid);
+    if (!inquiry) {
+      return reply.status(404).send({ success: false, message: 'Consulta não encontrada.' });
+    }
+
+    if (inquiry.status === 'ANSWERED') {
+      return reply.status(400).send({ success: false, message: 'Esta consulta já foi respondida.' });
+    }
+
+    const updated = await catalogService.answerSupplierInquiry(uuid, answeredItems);
+
+    // Format message to send via Evolution API
+    let message = `*Resposta do Fornecedor (Pedido #${uuid.split('-')[0]})*\n\nO fornecedor confirmou o estoque dos itens solicitados:\n\n`;
+    answeredItems.forEach(item => {
+      const statusText = item.available ? '✅ Em estoque' : '❌ Em falta';
+      message += `- *${item.name}*\n  Solicitado: ${item.quantity} | Confirmado: ${item.confirmedQuantity}\n  Status: ${statusText}\n\n`;
+    });
+
+    try {
+      const targetNumber = '5531988868362@s.whatsapp.net';
+      await evolutionService.sendTextMessage(targetNumber, message);
+    } catch (evoErr: any) {
+      console.error('[SupplierInquiry] Falha ao enviar WhatsApp:', evoErr.message);
+    }
+
+    return reply.send({ success: true, inquiry: updated });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
   }
 }
