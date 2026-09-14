@@ -560,11 +560,6 @@ Horário: ${timeStr}
 Código da Venda: ${order.order_code}
 Produto expedido por Snack Store BH - Eletronics e Smartwatch's
 CNPJ: 32.404.968/0001-70 - Minas Gerais (Belo Horizonte)
-Endereço :
-Edifício Savannah Mall
-R. Araguari, 359 - Barro Preto,
-Belo Horizonte - MG, 30190-110
-Segundo andar ( saindo do elevador saia à direita, final do corredor ) , sala 55
 
 Nome do Cliente: ${order.customer_name}
 CPF do Cliente: ${order.customer_cpf || 'Não informado'}

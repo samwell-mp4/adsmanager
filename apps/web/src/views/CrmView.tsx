@@ -44,6 +44,7 @@ import {
   Truck,
   ArrowLeft,
   Box,
+  MessageCircle,
 } from 'lucide-react';
 import { api } from '../services/api.js';
 import { BrowserProfile } from '../types/index.js';
@@ -111,6 +112,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       variant_name: string;
       quantity: number;
       unit_price: number;
+      cost_price: number;
     }>;
   }>({
     customer_name: '',
@@ -132,7 +134,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     package_length: 15,
     package_weight: 0.5,
     items: [
-      { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0 }
+      { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0, cost_price: 0 }
     ]
   });
 
@@ -172,7 +174,10 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
   const [loadingTimeline, setLoadingTimeline] = useState<boolean>(false);
   const [allFollowups, setAllFollowups] = useState<any[]>([]);
 
-  // Modals & Popovers
+  // Modals
+  const [whatsappConfirmModal, setWhatsappConfirmModal] = useState<{ isOpen: boolean; text: string; order: any } | null>(null);
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  // Popovers
   const [showFollowupModal, setShowFollowupModal] = useState<boolean>(false);
   const [followupForm, setFollowupForm] = useState({
     scheduled_at: '',
@@ -1067,7 +1072,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       product_name: '',
       variant_name: '',
       quantity: 1,
-      unit_price: 0
+      unit_price: 0,
+      cost_price: 0
     };
 
     if (presetProduct) {
@@ -1076,7 +1082,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         product_name: presetProduct.name,
         variant_name: '',
         quantity: 1,
-        unit_price: Number(presetProduct.promotional_price || presetProduct.price || 0)
+        unit_price: Number(presetProduct.promotional_price || presetProduct.price || 0),
+        cost_price: Number(presetProduct.cost_price || 0)
       };
     } else if (conv.product_title) {
       const priceNum = conv.product_price ? parseFloat(String(conv.product_price).replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')) || 0 : 0;
@@ -1085,7 +1092,8 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         product_name: conv.product_title,
         variant_name: '',
         quantity: 1,
-        unit_price: priceNum
+        unit_price: priceNum,
+        cost_price: 0
       };
     }
 
@@ -1125,7 +1133,7 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
       ...prev,
       items: [
         ...prev.items,
-        { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0 }
+        { product_id: null, product_name: '', variant_name: '', quantity: 1, unit_price: 0, cost_price: 0 }
       ]
     }));
   };
@@ -1142,20 +1150,6 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
     setOrderForm(prev => {
       const nextItems = [...prev.items];
       nextItems[index] = { ...nextItems[index], [field]: value };
-      return { ...prev, items: nextItems };
-    });
-  };
-
-  const handleSelectCatalogForOrderItem = (index: number, product: any) => {
-    const priceVal = Number(product.promotional_price || product.price || 0);
-    setOrderForm(prev => {
-      const nextItems = [...prev.items];
-      nextItems[index] = {
-        ...nextItems[index],
-        product_id: product.id,
-        product_name: product.name,
-        unit_price: priceVal
-      };
       return { ...prev, items: nextItems };
     });
   };
@@ -1197,21 +1191,31 @@ export const CrmView: React.FC<CrmViewProps> = ({ profiles, onOpenVnc }) => {
         payment_method: orderForm.payment_method,
         installments: Number(orderForm.installments) || 1,
         notes: orderForm.notes.trim(),
-        send_whatsapp: orderForm.send_whatsapp,
+        send_whatsapp: false, // Now we handle it via modal
         items: validItems.map(it => ({
           product_id: it.product_id || undefined,
           product_name: it.product_name.trim(),
           variant_name: it.variant_name?.trim() || undefined,
           quantity: Number(it.quantity) || 1,
-          unit_price: Number(it.unit_price) || 0
+          unit_price: Number(it.unit_price) || 0,
+          cost_price: Number(it.cost_price) || 0
         }))
       };
 
       const result = await api.createCrmOrder(payload);
-      setFeedback({ 
-        type: 'success', 
-        message: `Comanda ${result.order?.order_code || ''} gerada com sucesso! ${orderForm.send_whatsapp ? 'Recibo oficial disparado no WhatsApp.' : ''}` 
-      });
+      
+      if (orderForm.send_whatsapp && result.order) {
+        // Fix: populate items so generateReceiptText works properly
+        const orderForReceipt = { ...result.order, items: payload.items };
+        setWhatsappConfirmModal({
+          isOpen: true,
+          text: generateReceiptText(orderForReceipt),
+          order: result.order
+        });
+        setFeedback({ type: 'success', message: `Comanda ${result.order?.order_code || ''} salva! Confirme a mensagem do WhatsApp.` });
+      } else {
+        setFeedback({ type: 'success', message: `Comanda ${result.order?.order_code || ''} gerada com sucesso!` });
+      }
 
       setShowOrderModal(false);
       setRightPanelTab('PEDIDOS');
@@ -5718,13 +5722,45 @@ ${quotesList}
                           <label className="block text-[10px] text-slate-500 font-bold uppercase mb-0.5">
                             Produto {idx + 1}
                           </label>
-                          <input
-                            type="text"
-                            value={item.product_name}
-                            onChange={(e) => handleUpdateOrderItem(idx, 'product_name', e.target.value)}
-                            placeholder="Nome ou descrição do produto..."
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-base sm:text-xs focus:outline-none focus:border-blue-500"
-                          />
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={item.product_id || ''}
+                              onChange={(e) => {
+                                const pid = e.target.value;
+                                if (!pid) {
+                                  handleUpdateOrderItem(idx, 'product_id', undefined);
+                                  return;
+                                }
+                                const prod = catalogProducts.find((p: any) => p.id === parseInt(pid));
+                                if (prod) {
+                                  setOrderForm(prev => {
+                                    const nextItems = [...prev.items];
+                                    nextItems[idx] = {
+                                      ...nextItems[idx],
+                                      product_id: prod.id,
+                                      product_name: prod.name,
+                                      unit_price: Number(prod.promotional_price || prod.price || 0),
+                                      cost_price: Number(prod.cost_price || 0)
+                                    };
+                                    return { ...prev, items: nextItems };
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-purple-500"
+                            >
+                              <option value="">Selecione do Catálogo ou digite abaixo...</option>
+                              {catalogProducts.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              value={item.product_name}
+                              onChange={(e) => handleUpdateOrderItem(idx, 'product_name', e.target.value)}
+                              placeholder="Nome ou descrição do produto..."
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-900 text-base sm:text-xs focus:outline-none focus:border-blue-500"
+                            />
+                          </div>
                         </div>
 
                         <div className="md:col-span-2">
@@ -5764,22 +5800,6 @@ ${quotesList}
                         </div>
                       </div>
 
-                      {/* Fast catalog selector pill */}
-                      {catalogProducts.length > 0 && (
-                        <div className="flex items-center gap-1.5 overflow-x-auto text-[10px] pt-1 border-t border-slate-100 no-scrollbar">
-                          <span className="text-slate-400 font-semibold shrink-0">Catálogo:</span>
-                          {catalogProducts.slice(0, 5).map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => handleSelectCatalogForOrderItem(idx, p)}
-                              className="px-2 py-0.5 rounded bg-white hover:bg-purple-50 text-purple-700 border border-slate-200 hover:border-purple-300 whitespace-nowrap font-medium transition"
-                            >
-                              {p.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -6405,7 +6425,65 @@ ${quotesList}
           setIsSupplierInquiryModalOpen(false);
         }}
       />
+      {/* MODAL CONFIRMAÇÃO DE WHATSAPP */}
+      {whatsappConfirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50">
+              <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                <MessageCircle className="h-5 w-5" />
+                <h3>Confirmar Mensagem do WhatsApp</h3>
+              </div>
+              <button
+                onClick={() => setWhatsappConfirmModal(null)}
+                className="p-1.5 rounded-lg text-emerald-700/50 hover:text-emerald-700 hover:bg-emerald-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-slate-500 mb-2">Revise a mensagem antes de enviá-la ao cliente.</p>
+              <textarea
+                className="w-full h-64 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-emerald-500 font-mono"
+                value={whatsappConfirmModal.text}
+                onChange={(e) => setWhatsappConfirmModal({ ...whatsappConfirmModal, text: e.target.value })}
+              />
+            </div>
+            <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setWhatsappConfirmModal(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 font-bold hover:bg-slate-100 text-xs transition"
+              >
+                Pular Envio
+              </button>
+              <button
+                type="button"
+                disabled={sendingWhatsapp}
+                onClick={async () => {
+                  setSendingWhatsapp(true);
+                  try {
+                    await handleSendReply(whatsappConfirmModal.text);
+                    setFeedback({ type: 'success', message: 'Mensagem enviada com sucesso!' });
+                    setWhatsappConfirmModal(null);
+                  } catch (err) {
+                    alert('Erro ao enviar mensagem');
+                  } finally {
+                    setSendingWhatsapp(false);
+                  }
+                }}
+                className="px-6 py-2 rounded-xl text-white font-bold bg-emerald-600 hover:bg-emerald-700 shadow-md text-xs transition flex items-center gap-2"
+              >
+                {sendingWhatsapp ? 'Enviando...' : 'Enviar Mensagem'}
+                <Send className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default CrmView;
 

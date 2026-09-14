@@ -32,6 +32,7 @@ export const FinanceView: React.FC = () => {
   });
 
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -47,8 +48,13 @@ export const FinanceView: React.FC = () => {
   const [savingTransaction, setSavingTransaction] = useState<boolean>(false);
   const [formData, setFormData] = useState({
     description: '',
-    category: 'Frete / Transporte / Uber',
+    category: 'Vendas - Geral',
+    wallet: 'pix',
     amount: '',
+    cost_amount: '',
+    shipping_amount: '',
+    discount_amount: '',
+    product_id: '',
     payment_method: 'pix',
     due_date: new Date().toISOString().split('T')[0],
     status: 'pago' as 'pago' | 'pendente',
@@ -58,7 +64,7 @@ export const FinanceView: React.FC = () => {
   const fetchFinanceData = async () => {
     setLoading(true);
     try {
-      const [sum, listRes] = await Promise.all([
+      const [sum, listRes, catalogRes] = await Promise.all([
         api.getFinancialSummary().catch(() => ({
           balance: 0,
           total_income: 0,
@@ -67,7 +73,8 @@ export const FinanceView: React.FC = () => {
           pending_expenses: 0,
           recent_count: 0,
         })),
-        api.getFinancialTransactions({ limit: 200 }).catch(() => ({ transactions: [], total: 0 })),
+        api.getFinancialTransactions({ limit: 1000 }).catch(() => ({ transactions: [], total: 0 })),
+        api.getCatalogProducts({ limit: 500 }).catch(() => ({ products: [], total: 0, pages: 0 }))
       ]);
 
       setSummary(sum || {
@@ -79,6 +86,7 @@ export const FinanceView: React.FC = () => {
         recent_count: 0,
       });
       setTransactions(listRes.transactions || []);
+      setProducts(catalogRes.products || []);
     } catch (err: any) {
       console.error('Erro ao carregar dados financeiros:', err);
       setFeedback({ type: 'error', message: 'Erro ao carregar lançamentos financeiros' });
@@ -101,8 +109,13 @@ export const FinanceView: React.FC = () => {
     setModalType(type);
     setFormData({
       description: '',
-      category: type === 'despesa' ? 'Frete / Transporte / Uber' : 'Vendas - Geral',
+      category: type === 'despesa' ? 'Fornecedor / Estoque' : 'Vendas - Geral',
+      wallet: 'pix',
       amount: '',
+      cost_amount: '',
+      shipping_amount: '',
+      discount_amount: '',
+      product_id: '',
       payment_method: 'pix',
       due_date: new Date().toISOString().split('T')[0],
       status: 'pago',
@@ -130,6 +143,11 @@ export const FinanceView: React.FC = () => {
         category: formData.category,
         description: formData.description.trim(),
         amount: val,
+        wallet: formData.wallet,
+        cost_amount: parseCurrencyInput(formData.cost_amount),
+        shipping_amount: parseCurrencyInput(formData.shipping_amount),
+        discount_amount: parseCurrencyInput(formData.discount_amount),
+        product_id: formData.product_id ? parseInt(formData.product_id, 10) : undefined,
         payment_method: formData.payment_method,
         status: formData.status,
         due_date: formData.due_date,
@@ -558,47 +576,93 @@ export const FinanceView: React.FC = () => {
                 />
               </div>
 
-              {/* Categoria e Valor */}
+              {/* Carteira e Produto */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Categoria *</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Carteira *</label>
                   <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    value={formData.wallet}
+                    onChange={(e) => setFormData({ ...formData, wallet: e.target.value })}
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-none focus:border-blue-500"
                   >
-                    {modalType === 'despesa' ? (
-                      <>
-                        <option value="Frete / Transporte / Uber">Frete / Transporte / Uber</option>
-                        <option value="Motoboy / Logística">Motoboy / Logística</option>
-                        <option value="Combustível / Deslocamento">Combustível / Deslocamento</option>
-                        <option value="Embalagens & Caixas">Embalagens & Caixas</option>
-                        <option value="Fornecedor / Compra de Estoque">Fornecedor / Estoque</option>
-                        <option value="Despesas Operacionais">Despesas Operacionais</option>
-                        <option value="Marketing & Tráfego">Marketing & Tráfego</option>
-                        <option value="Outros">Outros</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Vendas - Geral">Vendas - Geral</option>
-                        <option value="Vendas - Balcão">Vendas - Balcão</option>
-                        <option value="Adiantamento">Adiantamento</option>
-                        <option value="Reembolso">Reembolso</option>
-                        <option value="Outros">Outros</option>
-                      </>
-                    )}
+                    <option value="pix">PIX</option>
+                    <option value="cartao_credito">Cartão de Crédito</option>
+                    <option value="cartao_debito">Cartão de Débito</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="transferencia">Transferência Bancária</option>
                   </select>
                 </div>
-
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Valor (R$) *</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Produto (Catálogo)</label>
+                  <select
+                    value={formData.product_id}
+                    onChange={(e) => {
+                      const pid = e.target.value;
+                      const prod = products.find((p: any) => p.id === parseInt(pid));
+                      if (prod) {
+                        setFormData({
+                          ...formData,
+                          product_id: pid,
+                          description: formData.description || `Venda - ${prod.name}`,
+                          amount: prod.price ? prod.price.toString().replace('.', ',') : formData.amount,
+                          cost_amount: prod.cost_price ? prod.cost_price.toString().replace('.', ',') : formData.cost_amount,
+                        });
+                      } else {
+                        setFormData({ ...formData, product_id: pid });
+                      }
+                    }}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">Selecione um produto...</option>
+                    {products.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Valores */}
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Custo (R$)</label>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={formData.cost_amount}
+                    onChange={(e) => setFormData({ ...formData, cost_amount: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Frete (R$)</label>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={formData.shipping_amount}
+                    onChange={(e) => setFormData({ ...formData, shipping_amount: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Desconto</label>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={formData.discount_amount}
+                    onChange={(e) => setFormData({ ...formData, discount_amount: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-emerald-700 block mb-1">Total (R$) *</label>
                   <input
                     type="text"
                     required
                     placeholder="Ex: 25,00"
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                    className="w-full p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>

@@ -453,6 +453,7 @@ export interface CreateOrderInput {
     variant_name?: string;
     quantity: number;
     unit_price: number;
+    cost_price?: number;
   }>;
 }
 
@@ -468,6 +469,11 @@ export interface CrmFinancialTransaction {
   due_date: string;
   paid_at?: Date | string | null;
   notes?: string | null;
+  wallet?: string;
+  cost_amount?: number;
+  shipping_amount?: number;
+  discount_amount?: number;
+  product_id?: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -482,6 +488,11 @@ export interface CreateFinancialTransactionInput {
   status?: 'pago' | 'pendente' | 'cancelado';
   due_date?: string;
   notes?: string;
+  wallet?: string;
+  cost_amount?: number;
+  shipping_amount?: number;
+  discount_amount?: number;
+  product_id?: number;
 }
 
 export interface FinancialSummary {

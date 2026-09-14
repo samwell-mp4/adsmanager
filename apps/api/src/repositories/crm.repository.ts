@@ -278,6 +278,15 @@ export class CrmRepository {
         CREATE INDEX IF NOT EXISTS idx_crm_fin_type ON crm_financial_transactions(type);
         CREATE INDEX IF NOT EXISTS idx_crm_fin_date ON crm_financial_transactions(due_date);
         CREATE INDEX IF NOT EXISTS idx_crm_fin_status ON crm_financial_transactions(status);
+        
+        -- Migrações de Estrutura Financeira e CRM
+        ALTER TABLE crm_financial_transactions ADD COLUMN IF NOT EXISTS wallet VARCHAR(50) DEFAULT 'pix';
+        ALTER TABLE crm_financial_transactions ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(10,2) DEFAULT 0;
+        ALTER TABLE crm_financial_transactions ADD COLUMN IF NOT EXISTS shipping_amount NUMERIC(10,2) DEFAULT 0;
+        ALTER TABLE crm_financial_transactions ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
+        ALTER TABLE crm_financial_transactions ADD COLUMN IF NOT EXISTS product_id INTEGER;
+
+        ALTER TABLE crm_order_items ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0;
       `);
 
       // Seed default statuses se tabela estiver vazia
@@ -1998,8 +2007,9 @@ export class CrmRepository {
       const amount = Number(data.amount) || 0;
       const res = await client.query(
         `INSERT INTO crm_financial_transactions (
-            type, category, description, amount, payment_method, order_id, status, due_date, paid_at, notes
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            type, category, description, amount, payment_method, order_id, status, due_date, paid_at, notes,
+            wallet, cost_amount, shipping_amount, discount_amount, product_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING *;`,
         [
           data.type,
@@ -2012,6 +2022,11 @@ export class CrmRepository {
           data.due_date || new Date().toISOString().split('T')[0],
           data.status === 'pago' ? new Date() : null,
           data.notes?.trim() || null,
+          data.wallet || 'pix',
+          Number(data.cost_amount) || 0,
+          Number(data.shipping_amount) || 0,
+          Number(data.discount_amount) || 0,
+          data.product_id || null
         ]
       );
       const r = res.rows[0];
@@ -2098,6 +2113,9 @@ export class CrmRepository {
         transactions: res.rows.map(r => ({
           ...r,
           amount: Number(r.amount),
+          cost_amount: Number(r.cost_amount || 0),
+          shipping_amount: Number(r.shipping_amount || 0),
+          discount_amount: Number(r.discount_amount || 0),
         })),
         total,
       };
