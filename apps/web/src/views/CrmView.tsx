@@ -2667,34 +2667,36 @@ ${quotesList}
 
               {/* Status & Tags Quick Bar */}
               <div className="px-4 py-3 border-b border-slate-100 bg-white space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Etapa Comercial:</span>
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Etapa Comercial</span>
+                    <div className="shrink-0">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={handleOpenShippingQuickModal}
-                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      className="flex-1 justify-center px-2 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold transition flex items-center gap-1 shadow-2xs"
                       title="Cotar Fretes no Melhor Envio e Enviar no Chat"
                     >
-                      <Truck className="h-3 w-3 text-blue-600" />
-                      <span>Cotar Frete</span>
+                      <Truck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                      <span className="whitespace-nowrap">Cotar Frete</span>
                     </button>
                     <button
                       onClick={() => setIsSupplierInquiryModalOpen(true)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      className="flex-1 justify-center px-2 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold transition flex items-center gap-1 shadow-2xs"
                       title="Consultar Fornecedor em Massa"
                     >
-                      <Box className="h-3 w-3 text-indigo-600" />
-                      <span>Consultar Fornecedor</span>
+                      <Box className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                      <span className="whitespace-nowrap">Consultar Forn.</span>
                     </button>
                     <button
                       onClick={() => handleOpenCreateOrder()}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1.5 shadow-xs"
+                      className="flex-1 justify-center px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 shadow-xs"
                       title="Abrir Novo Pedido / Comanda para este cliente"
                     >
-                      <ShoppingBag className="h-3 w-3" />
-                      <span>+ Nova Comanda</span>
+                      <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
+                      <span className="whitespace-nowrap">Nova Comanda</span>
                     </button>
-                    <div className="shrink-0">{getStatusBadge(activeThread.conversation.lead_status || 'novo')}</div>
                   </div>
                 </div>
 

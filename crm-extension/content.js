@@ -367,9 +367,13 @@ function scrapeFacebook() {
           'marketplace'
         ];
 
-        const messageBubbles = Array.from(searchRoot.querySelectorAll('div[dir="auto"]'))
+        const messageBubbles = Array.from(searchRoot.querySelectorAll('div[dir="auto"], span[dir="auto"], div[style*="white-space: pre-wrap"], [role="row"] div[style*="break-word"], div[data-scope="messages_table"] div[style*="break-word"]'))
           .filter(el => {
             if (el.closest('button, [role="button"], a[role="link"], [data-pagelet="MWThreadHeaderContent"], [role="complementary"], h1, h2, h3, h4')) {
+              return false;
+            }
+            // Skip elements that contain other message bubbles to avoid duplicates
+            if (el.querySelector('div[dir="auto"], span[dir="auto"], div[style*="white-space: pre-wrap"]')) {
               return false;
             }
             const t = el.textContent.trim();

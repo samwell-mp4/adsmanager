@@ -13,6 +13,7 @@ interface ProductSelection {
   sku: string;
   name: string;
   quantity: number;
+  main_image?: string;
 }
 
 export const SupplierInquiryModal: React.FC<SupplierInquiryModalProps> = ({ isOpen, onClose, onMessageGenerated }) => {
@@ -56,7 +57,7 @@ export const SupplierInquiryModal: React.FC<SupplierInquiryModalProps> = ({ isOp
       if (exists) {
         return prev.filter(item => item.id !== product.id);
       }
-      return [...prev, { id: product.id, sku: product.sku || '', name: product.name, quantity: 1 }];
+      return [...prev, { id: product.id, sku: product.sku || '', name: product.name, quantity: 1, main_image: product.main_image }];
     });
   };
 
@@ -175,6 +176,13 @@ export const SupplierInquiryModal: React.FC<SupplierInquiryModalProps> = ({ isOp
               ) : (
                 selectedItems.map(item => (
                   <div key={item.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
+                    <div className="h-10 w-10 bg-slate-100 rounded-lg shrink-0 overflow-hidden border border-slate-200 flex items-center justify-center">
+                      {item.main_image ? (
+                        <img src={item.main_image} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <Box className="h-4 w-4 text-slate-400" />
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold text-slate-800 truncate" title={item.name}>{item.name}</div>
                     </div>
