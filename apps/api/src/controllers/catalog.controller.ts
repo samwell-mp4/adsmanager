@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { catalogService } from '../services/catalog.service.js';
-import { CreateProductInput, ProductFilterOptions } from '../types/index.js';
+import { CreateProductInput, ProductFilterOptions, CatalogProduct } from '../types/index.js';
 import { randomUUID } from 'crypto';
 import { evolutionService } from '../services/evolution.service.js';
 
