@@ -6398,11 +6398,9 @@ ${quotesList}
       <SupplierInquiryModal
         isOpen={isSupplierInquiryModalOpen}
         onClose={() => setIsSupplierInquiryModalOpen(false)}
-        onMessageGenerated={(msg) => {
-          setInputMessage(prev => prev ? prev + '\n\n' + msg : msg);
+        onMessageGenerated={(msg: string) => {
+          setReplyText((prev: string) => prev ? prev + '\n\n' + msg : msg);
           setIsSupplierInquiryModalOpen(false);
-          // Foca o input de chat
-          setTimeout(() => chatInputRef.current?.focus(), 100);
         }}
       />
     </div>
