@@ -5,6 +5,7 @@ import { pool, testDbConnection } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { proxyRoutes } from './routes/proxy.routes.js';
+import fsRoutes from './routes/fs.routes.js';
 import { profileRoutes } from './routes/profile.routes.js';
 import { extensionRoutes } from './routes/extension.routes.js';
 
@@ -180,6 +181,8 @@ async function start() {
     const { shippingRoutes } = await import('./routes/shipping.routes.js');
     await fastify.register(shippingRoutes, { prefix: '/shipping' });
     await fastify.register(shippingRoutes, { prefix: '/api/shipping' });
+    
+    await fastify.register(fsRoutes);
 
     // Save official CRM extension zip to /tmp for direct host/container access
     try {

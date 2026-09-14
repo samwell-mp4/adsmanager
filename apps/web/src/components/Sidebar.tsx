@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   Globe, 
   Layers, 
-  Shield, 
   Puzzle, 
   FolderKanban, 
   Activity, 
@@ -12,7 +11,8 @@ import {
   MessageSquare,
   Package,
   DollarSign,
-  X
+  X,
+  FolderOpen
 } from 'lucide-react';
 import { api } from '../services/api.js';
 
@@ -53,8 +53,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
     { name: 'CRM & Chats (Inbox)', path: '/crm', icon: MessageSquare, badge: null },
     { name: 'Catálogo de Produtos', path: '/catalog', icon: Package, badge: null },
     { name: 'Controle Financeiro', path: '/finance', icon: DollarSign, badge: 'Novo' },
-    { name: 'Gerenciador de Proxies', path: '/proxies', icon: Shield, badge: null },
+    { name: 'Controle de Proxies', path: '/proxies', icon: Globe, badge: null },
     { name: 'Extensões do Google', path: '/extensions', icon: Puzzle, badge: null },
+    { name: 'FTP / Arquivos', path: '/files', icon: FolderOpen, badge: null },
     { name: 'Grupos & Campanhas', path: '/groups', icon: FolderKanban, badge: null },
   ];
 

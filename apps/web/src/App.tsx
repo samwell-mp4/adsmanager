@@ -7,6 +7,7 @@ import { ProfilesPage } from './pages/ProfilesPage.js';
 import { ProfileDetailPage } from './pages/ProfileDetailPage.js';
 import { ProxiesPage } from './pages/ProxiesPage.js';
 import { ExtensionsPage } from './pages/ExtensionsPage.js';
+import { FileManagerPage } from './pages/FileManagerPage.js';
 import { GroupsPage } from './pages/GroupsPage.js';
 import { CrmPage } from './pages/CrmPage.js';
 import { CatalogPage } from './pages/CatalogPage.js';
@@ -70,6 +71,7 @@ export const App: React.FC = () => {
               <Route path="/profiles/:id" element={<div className="h-full overflow-y-auto"><ProfileDetailPage /></div>} />
               <Route path="/proxies" element={<div className="h-full overflow-y-auto"><ProxiesPage /></div>} />
               <Route path="/extensions" element={<div className="h-full overflow-y-auto"><ExtensionsPage /></div>} />
+              <Route path="/files" element={<div className="h-full overflow-y-auto"><FileManagerPage /></div>} />
               <Route path="/groups" element={<div className="h-full overflow-y-auto"><GroupsPage /></div>} />
               <Route path="/fornecedor/:uuid" element={<div className="h-full overflow-y-auto"><SupplierInquiryPage /></div>} />
             </Routes>

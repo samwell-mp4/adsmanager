@@ -862,6 +862,48 @@ export const api = {
     });
     return handleResponse<any>(res);
   },
+
+  // === File System ===
+  fsListDirectory: async (path: string) => {
+    const res = await fetch(`${API_BASE}/fs/list?path=${encodeURIComponent(path)}`);
+    return res.json();
+  },
+  fsReadFile: async (path: string) => {
+    const res = await fetch(`${API_BASE}/fs/read?path=${encodeURIComponent(path)}`);
+    return res.json();
+  },
+  fsWriteFile: async (path: string, content: string) => {
+    const res = await fetch(`${API_BASE}/fs/write`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content })
+    });
+    return res.json();
+  },
+  fsUploadFile: async (path: string, fileBase64: string) => {
+    const res = await fetch(`${API_BASE}/fs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, fileBase64 })
+    });
+    return res.json();
+  },
+  fsDeleteItem: async (path: string) => {
+    const res = await fetch(`${API_BASE}/fs/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    return res.json();
+  },
+  fsCreateDirectory: async (path: string) => {
+    const res = await fetch(`${API_BASE}/fs/mkdir`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    return res.json();
+  }
 };
 
 
