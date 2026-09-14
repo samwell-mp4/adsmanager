@@ -164,6 +164,18 @@ export async function deleteProductHandler(
   }
 }
 
+export async function deleteAllProductsHandler(
+  req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const deleted = await catalogService.deleteAllProducts();
+    return reply.send({ success: true, deleted, message: 'Todos os produtos foram removidos com sucesso.' });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
 export async function importProductsHandler(
   req: FastifyRequest<{ Body: { items: CreateProductInput[] } }>,
   reply: FastifyReply

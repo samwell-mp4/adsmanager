@@ -79,6 +79,10 @@ export class CatalogService {
     return catalogRepository.deleteProduct(id);
   }
 
+  async deleteAllProducts(): Promise<boolean> {
+    return catalogRepository.deleteAllProducts();
+  }
+
   async importProducts(items: CreateProductInput[]): Promise<{ imported: number; errors: string[] }> {
     if (!items || !Array.isArray(items) || items.length === 0) {
       throw new Error('Nenhum item fornecido para importação.');

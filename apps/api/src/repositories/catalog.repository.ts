@@ -567,6 +567,12 @@ export class CatalogRepository {
     return (res.rowCount || 0) > 0;
   }
 
+  async deleteAllProducts(): Promise<boolean> {
+    await this.ensureCatalogTablesExist();
+    await pool.query('DELETE FROM catalog_products');
+    return true;
+  }
+
   async importProducts(items: CreateProductInput[]): Promise<{ imported: number; errors: string[] }> {
     await this.ensureCatalogTablesExist();
     let imported = 0;

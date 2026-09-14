@@ -9,6 +9,7 @@ import {
   createProductHandler,
   updateProductHandler,
   deleteProductHandler,
+  deleteAllProductsHandler,
   importProductsHandler,
   uploadCatalogImageHandler
 } from '../controllers/catalog.controller.js';
@@ -37,6 +38,7 @@ export async function catalogRoutes(fastify: FastifyInstance) {
   for (const u of prodListUrls) {
     fastify.get(u, listProductsHandler);
     fastify.post(u, createProductHandler);
+    fastify.delete(u, deleteAllProductsHandler);
   }
   const prodItemUrls = ['/api/catalog/products/:id', '/catalog/products/:id'];
   for (const u of prodItemUrls) {

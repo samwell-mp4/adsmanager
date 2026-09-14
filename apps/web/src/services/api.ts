@@ -661,6 +661,13 @@ export const api = {
     return handleResponse<any>(res);
   },
 
+  async deleteAllCatalogProducts(): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/catalog/products`, {
+      method: 'DELETE',
+    });
+    return handleResponse<any>(res);
+  },
+
   async importCatalogProducts(items: any[]): Promise<{ imported: number; errors: string[] }> {
     const res = await fetch(`${API_BASE}/catalog/import`, {
       method: 'POST',
