@@ -166,6 +166,22 @@ export async function deleteProductHandler(
   }
 }
 
+export async function bulkUpdateProductsHandler(
+  req: FastifyRequest<{ Body: { ids: number[], data: Partial<CatalogProduct> } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { ids, data } = req.body || {};
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.status(400).send({ success: false, message: 'Invalid or missing ids' });
+    }
+    const updatedCount = await catalogService.bulkUpdateProducts(ids, data);
+    return reply.send({ success: true, updatedCount });
+  } catch (err: any) {
+    return reply.status(500).send({ success: false, message: err.message });
+  }
+}
+
 export async function deleteAllProductsHandler(
   req: FastifyRequest,
   reply: FastifyReply

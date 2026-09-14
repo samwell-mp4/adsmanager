@@ -79,6 +79,10 @@ export class CatalogService {
     return catalogRepository.deleteProduct(id);
   }
 
+  async bulkUpdateProducts(ids: number[], data: Partial<CatalogProduct>): Promise<number> {
+    return catalogRepository.bulkUpdateProducts(ids, data);
+  }
+
   async deleteAllProducts(): Promise<boolean> {
     return catalogRepository.deleteAllProducts();
   }

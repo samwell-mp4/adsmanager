@@ -1839,7 +1839,7 @@ ${quotesList}
             <option value="all">Status (Todos)</option>
             {statuses.length > 0 ? (
               statuses.map((s) => (
-                <option key={s.id} value={s.id}>
+                <option key={s.id} value={s.slug || s.name}>
                   {s.name}
                 </option>
               ))
@@ -2365,7 +2365,7 @@ ${quotesList}
                     >
                       {statuses.length > 0 ? (
                         statuses.map((s) => (
-                          <option key={s.id} value={s.id}>
+                          <option key={s.id} value={s.slug || s.name}>
                             Status: {s.name}
                           </option>
                         ))
@@ -4627,7 +4627,7 @@ ${quotesList}
                 >
                   {statuses.length > 0 ? (
                     statuses.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={s.slug || s.name}>
                         {s.name}
                       </option>
                     ))

@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   List,
   Edit3,
+  Edit2,
   Trash2,
   CheckCircle2,
   AlertCircle,
@@ -83,6 +84,8 @@ export const CatalogView: React.FC = () => {
 
   // Bulk Selection
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState<{ category_id?: string; price?: string; cost_price?: string; stock?: string }>({});
 
   // Load initial data
   const fetchData = async () => {
@@ -419,6 +422,42 @@ export const CatalogView: React.FC = () => {
     }
   };
 
+  // Bulk Edit Selected
+  const handleBulkEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedProductIds.length === 0) return;
+    setLoading(true);
+    try {
+      const payload: any = {};
+      if (bulkEditData.category_id) payload.category_id = parseInt(bulkEditData.category_id, 10);
+      if (bulkEditData.price) payload.price = parseFloat(bulkEditData.price);
+      if (bulkEditData.cost_price) payload.cost_price = parseFloat(bulkEditData.cost_price);
+      if (bulkEditData.stock) payload.stock = parseInt(bulkEditData.stock, 10);
+
+      if (Object.keys(payload).length > 0) {
+        await api.bulkUpdateCatalogProducts(selectedProductIds, payload);
+        
+        // Optimistic update
+        setProducts(prev => prev.map(p => {
+          if (selectedProductIds.includes(p.id)) {
+            return { ...p, ...payload };
+          }
+          return p;
+        }));
+        
+        setFeedback({ type: 'success', message: `${selectedProductIds.length} produtos atualizados com sucesso!` });
+        setTimeout(() => setFeedback(null), 3000);
+      }
+      setIsBulkEditModalOpen(false);
+      setSelectedProductIds([]);
+      setBulkEditData({});
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao editar produtos: ' + err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Add Variant
   const handleAddVariant = () => {
     if (!newVariant.name.trim()) return;
@@ -589,6 +628,17 @@ export const CatalogView: React.FC = () => {
             >
               <CheckCircle2 className="h-3.5 w-3.5 text-slate-500" />
               <span>{selectedProductIds.length === filteredProducts.length ? 'Desmarcar Todos' : 'Selecionar Todos'}</span>
+            </button>
+          )}
+
+          {/* Bulk Edit Button */}
+          {selectedProductIds.length > 0 && (
+            <button
+              onClick={() => setIsBulkEditModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+            >
+              <Edit2 className="h-3.5 w-3.5 text-blue-600" />
+              <span>Editar em Massa ({selectedProductIds.length})</span>
             </button>
           )}
 
@@ -1604,6 +1654,105 @@ Brand Collection 212,BC-212,49.90,25,Brand Collection,https://...`}
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Edição em Massa */}
+      {isBulkEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-0 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
+                <Edit2 className="h-5 w-5 text-blue-500" /> Edição em Massa ({selectedProductIds.length} produtos)
+              </h2>
+              <button
+                onClick={() => setIsBulkEditModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition p-1 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleBulkEditSubmit} className="p-6">
+              <p className="text-sm text-slate-500 mb-6">
+                Preencha apenas os campos que deseja alterar. Os campos deixados em branco manterão seus valores originais nos produtos selecionados.
+              </p>
+
+              <div className="space-y-4">
+                {/* Categoria */}
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Categoria</label>
+                  <select
+                    value={bulkEditData.category_id || ''}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, category_id: e.target.value })}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition text-sm"
+                  >
+                    <option value="">Não alterar</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Preço */}
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Preço de Venda (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Não alterar"
+                      value={bulkEditData.price || ''}
+                      onChange={(e) => setBulkEditData({ ...bulkEditData, price: e.target.value })}
+                      className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition text-sm"
+                    />
+                  </div>
+
+                  {/* Custo */}
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Custo (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Não alterar"
+                      value={bulkEditData.cost_price || ''}
+                      onChange={(e) => setBulkEditData({ ...bulkEditData, cost_price: e.target.value })}
+                      className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Estoque */}
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Estoque Fixo</label>
+                  <input
+                    type="number"
+                    placeholder="Não alterar"
+                    value={bulkEditData.stock || ''}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, stock: e.target.value })}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-8 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkEditModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition shadow-md shadow-blue-500/20 disabled:opacity-50 text-sm flex items-center gap-2"
+                >
+                  {loading ? 'Salvando...' : 'Aplicar Alterações'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -635,6 +635,40 @@ export class CatalogRepository {
     `, [JSON.stringify(answeredItems), uuid]);
     return res.rows[0] || null;
   }
+
+  async bulkUpdateProducts(ids: number[], data: Partial<CatalogProduct>): Promise<number> {
+    await this.ensureCatalogTablesExist();
+    if (ids.length === 0) return 0;
+    
+    const setFields: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    const validFields = ['category_id', 'price', 'cost_price', 'promotional_price', 'stock', 'is_active'];
+    for (const field of validFields) {
+      if (data[field as keyof CatalogProduct] !== undefined) {
+        setFields.push(`${field} = $${paramIndex}`);
+        values.push(data[field as keyof CatalogProduct]);
+        paramIndex++;
+      }
+    }
+
+    if (setFields.length === 0) return 0;
+
+    setFields.push(`updated_at = NOW()`);
+    
+    const idParams = ids.map((_, i) => `$${paramIndex + i}`).join(', ');
+    values.push(...ids);
+
+    const query = `
+      UPDATE catalog_products 
+      SET ${setFields.join(', ')}
+      WHERE id IN (${idParams})
+    `;
+
+    const res = await pool.query(query, values);
+    return res.rowCount || 0;
+  }
 }
 
 export const catalogRepository = new CatalogRepository();

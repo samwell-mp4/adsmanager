@@ -655,10 +655,17 @@ export const api = {
   },
 
   async deleteCatalogProduct(id: number): Promise<boolean> {
-    const res = await fetch(`${API_BASE}/catalog/products/${id}`, {
-      method: 'DELETE',
+    const res = await fetch(`${API_BASE}/catalog/products/${id}`, { method: 'DELETE' });
+    return handleResponse<boolean>(res);
+  },
+
+  async bulkUpdateCatalogProducts(ids: number[], data: any): Promise<{ success: boolean; updatedCount: number }> {
+    const res = await fetch(`${API_BASE}/catalog/products/bulk-update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, data }),
     });
-    return handleResponse<any>(res);
+    return handleResponse<{ success: boolean; updatedCount: number }>(res);
   },
 
   async deleteAllCatalogProducts(): Promise<boolean> {

@@ -10,6 +10,7 @@ import {
   updateProductHandler,
   deleteProductHandler,
   deleteAllProductsHandler,
+  bulkUpdateProductsHandler,
   importProductsHandler,
   uploadCatalogImageHandler,
   createSupplierInquiryHandler,
@@ -50,10 +51,14 @@ export async function catalogRoutes(fastify: FastifyInstance) {
     fastify.delete(u, deleteProductHandler);
   }
 
-  // Importação em lote
+  // Importação e edição em lote
   const importUrls = ['/api/catalog/import', '/catalog/import'];
   for (const u of importUrls) {
     fastify.post(u, importProductsHandler);
+  }
+  const bulkUpdateUrls = ['/api/catalog/products/bulk-update', '/catalog/products/bulk-update'];
+  for (const u of bulkUpdateUrls) {
+    fastify.post(u, bulkUpdateProductsHandler);
   }
 
   // Supplier Inquiries
