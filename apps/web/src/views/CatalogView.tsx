@@ -81,13 +81,16 @@ export const CatalogView: React.FC = () => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [newCategoryName, setNewCategoryName] = useState<string>('');
 
+  // Bulk Selection
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+
   // Load initial data
   const fetchData = async () => {
     setLoading(true);
     try {
       const [cats, prodsRes] = await Promise.all([
         api.getCatalogCategories().catch(() => []),
-        api.getCatalogProducts({ limit: 100 }).catch(() => ({ products: [] })),
+        api.getCatalogProducts({ limit: 1000 }).catch(() => ({ products: [] })),
       ]);
       setCategories(cats || []);
       setProducts(prodsRes.products || []);
@@ -373,10 +376,44 @@ export const CatalogView: React.FC = () => {
     try {
       await api.deleteAllCatalogProducts();
       setProducts([]);
+      setSelectedProductIds([]);
       setFeedback({ type: 'success', message: 'Todos os produtos foram removidos com sucesso!' });
       setTimeout(() => setFeedback(null), 3000);
     } catch (err: any) {
       setFeedback({ type: 'error', message: 'Erro ao remover todos os produtos: ' + err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle Selection
+  const toggleSelection = (id: number) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedProductIds.length === filteredProducts.length) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(filteredProducts.map((p) => p.id));
+    }
+  };
+
+  // Delete Selected Products
+  const handleDeleteSelected = async () => {
+    if (selectedProductIds.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja deletar os ${selectedProductIds.length} produtos selecionados?`)) return;
+    setLoading(true);
+    try {
+      await Promise.all(selectedProductIds.map(id => api.deleteCatalogProduct(id)));
+      setProducts((prev) => prev.filter((p) => !selectedProductIds.includes(p.id)));
+      setSelectedProductIds([]);
+      setFeedback({ type: 'success', message: 'Produtos selecionados foram removidos!' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: 'Erro ao remover produtos: ' + err.message });
     } finally {
       setLoading(false);
     }
@@ -544,6 +581,28 @@ export const CatalogView: React.FC = () => {
             <span>Categorias ({categories.length})</span>
           </button>
 
+          {/* Select All Toggle */}
+          {filteredProducts.length > 0 && (
+            <button
+              onClick={toggleSelectAll}
+              className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 text-slate-500" />
+              <span>{selectedProductIds.length === filteredProducts.length ? 'Desmarcar Todos' : 'Selecionar Todos'}</span>
+            </button>
+          )}
+
+          {/* Delete Selected Button */}
+          {selectedProductIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+              <span>Deletar Selecionados ({selectedProductIds.length})</span>
+            </button>
+          )}
+
           {/* Import Button */}
           <button
             onClick={() => setIsImportModalOpen(true)}
@@ -706,8 +765,24 @@ export const CatalogView: React.FC = () => {
               return (
                 <div
                   key={p.id}
-                  className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex flex-col justify-between hover:border-slate-300 hover:shadow-md transition-all group"
+                  className={`bg-white border ${selectedProductIds.includes(p.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200/90'} rounded-2xl p-3.5 flex flex-col justify-between hover:border-slate-300 hover:shadow-md transition-all group relative cursor-pointer`}
+                  onClick={(e) => {
+                     const target = e.target as HTMLElement;
+                     if (!target.closest('button')) {
+                       toggleSelection(p.id);
+                     }
+                  }}
                 >
+                  {/* Selection Checkbox */}
+                  <div className="absolute top-2 right-2 z-20">
+                    <input 
+                      type="checkbox"
+                      checked={selectedProductIds.includes(p.id)}
+                      onChange={() => {}}
+                      className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </div>
+
                   {/* Top Image & Badges */}
                   <div>
                     <div className="relative w-full aspect-square rounded-xl bg-slate-100 overflow-hidden mb-3 border border-slate-100 flex items-center justify-center">
@@ -820,6 +895,14 @@ export const CatalogView: React.FC = () => {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <th className="p-3 w-10">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedProductIds.length === filteredProducts.length && filteredProducts.length > 0} 
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="p-3 w-12">Foto</th>
                   <th className="p-3">SKU</th>
                   <th className="p-3">Nome do Produto</th>
@@ -832,7 +915,15 @@ export const CatalogView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/60 transition">
+                  <tr key={p.id} className={`hover:bg-slate-50/60 transition ${selectedProductIds.includes(p.id) ? 'bg-blue-50/40' : ''}`}>
+                    <td className="p-3">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedProductIds.includes(p.id)} 
+                        onChange={() => toggleSelection(p.id)}
+                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="p-3">
                       <div className="h-9 w-9 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 flex items-center justify-center">
                         {p.main_image ? (
